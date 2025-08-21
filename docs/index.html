@@ -3,150 +3,232 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Kosten Analyzer — Barclays & N26 Import (v0.41)</title>
+  <title>Kosten Analyzer — Barclays & N26 Import (v0.5)</title>
   <style>
-    body { font-family: system-ui, sans-serif; background:#0b1020; color:#e8efff; margin:0; }
-    header { padding:16px 20px; border-bottom:1px solid #333; }
+    :root { --bg:#0b1020; --card:#131a2e; --muted:#8ea0c6; --accent:#6cf; --good:#0a8; --bad:#e55; }
+    html,body { margin:0; padding:0; background:var(--bg); color:#e8efff; font:14px/1.5 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; }
+    header { padding:16px 20px; border-bottom:1px solid rgba(255,255,255,.08); }
     h1 { margin:0; font-size:20px; }
     main { padding:20px; display:grid; gap:16px; }
-    .card { background:#131a2e; padding:16px; border-radius:12px; }
-    button { padding:8px 12px; border-radius:8px; border:none; cursor:pointer; }
-    button.primary { background:#6cf; color:#001633; font-weight:600; }
-    table { width:100%; border-collapse:collapse; margin-top:8px; }
-    th, td { border-bottom:1px solid #333; padding:6px; }
-    th { font-size:12px; text-transform:uppercase; color:#8ea0c6; }
-    .num { text-align:right; }
-    .ok { color:#c4ffd7; }
-    .bad { color:#ffd2d2; }
+    .row { display:grid; grid-template-columns: 1fr 1fr; gap:16px; }
+    .card { background:var(--card); border:1px solid rgba(255,255,255,.08); border-radius:14px; padding:16px; box-shadow:0 10px 25px rgba(0,0,0,.25); }
+    .muted { color:var(--muted); }
+    .controls { display:flex; flex-wrap:wrap; gap:8px 12px; align-items:center; }
+    input[type=file] { display:block; margin:6px 0 10px; }
+    button { background:#1c2545; border:1px solid rgba(255,255,255,.12); color:#fff; padding:10px 14px; border-radius:12px; cursor:pointer; }
+    button:hover { background:#212b56; }
+    button.primary { background:var(--accent); color:#001633; border:none; font-weight:600; }
+    button.danger { background:#2b1730; color:#ffd8df; border-color:#723; }
+    table { width:100%; border-collapse:collapse; }
+    th, td { text-align:left; padding:8px 6px; border-bottom:1px dashed rgba(255,255,255,.08); vertical-align:top; }
+    th { font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); }
+    tbody tr:hover { background:rgba(255,255,255,.03); }
+    .num { text-align:right; font-variant-numeric:tabular-nums; }
+    .chip { display:inline-block; padding:2px 8px; border-radius:999px; background:#1f2746; color:#b7c7f0; font-size:12px; }
+    .small { font-size:12px; }
+    .statuslist { display:flex; flex-direction:column; gap:6px; }
+    .statusrow { display:flex; gap:10px; align-items:center; }
+    .statusrow .name { font-weight:600; }
+    .ok { color:#c4ffd7; background:#153123; border:1px solid #285a39; padding:2px 6px; border-radius:6px; font-size:12px; }
+    .bad { color:#ffd2d2; background:#3a1a1a; border:1px solid #6d2a2a; padding:2px 6px; border-radius:6px; font-size:12px; }
+    details { margin-top:10px; }
+    footer { color:var(--muted); font-size:12px; padding:16px 20px; border-top:1px solid rgba(255,255,255,.08); }
   </style>
 </head>
 <body>
-<header><h1>Kosten Analyzer <span style="color:#8ea0c6">(v0.4)</span></h1></header>
-<main>
-  <div class="card">
-    <h3>Barclays Import</h3>
-    <input id="barclaysInput" type="file" accept="application/pdf" style="display:block;margin-bottom:8px;" />
-    <button id="barclaysBtn" class="primary">Import Barclays</button>
-    <div>Zuletzt: <span id="barclaysLast">–</span></div>
-    <div id="barclaysStatus"></div>
-  </div>
+  <header>
+    <h1>Kosten Analyzer — <span class="muted">Barclays & N26</span> <span class="chip">v0.5</span></h1>
+  </header>
 
-  <div class="card">
-    <h3>N26 Import</h3>
-    <input id="n26Input" type="file" accept="application/pdf" style="display:block;margin-bottom:8px;" />
-    <button id="n26Btn" class="primary">Import N26</button>
-    <div>Zuletzt: <span id="n26Last">–</span></div>
-    <div id="n26Status"></div>
-  </div>
+  <main>
+    <section class="row">
+      <div class="card">
+        <h3>Barclays Import</h3>
+        <input id="barclaysInput" type="file" accept="application/pdf" />
+        <div class="controls">
+          <button id="barclaysBtn" class="primary">Import Barclays</button>
+          <span class="small">Zuletzt: <b id="barclaysLast">–</b></span>
+        </div>
+        <div id="barclaysStatus" class="statuslist"></div>
+      </div>
 
-  <div class="card">
-    <h3>Importierte Transaktionen</h3>
-    <button id="exportCsv" class="primary">CSV exportieren</button>
-    <table>
-      <thead><tr><th>Bank</th><th>Datum</th><th>Beschreibung</th><th class="num">Betrag</th></tr></thead>
-      <tbody id="txBody"></tbody>
-    </table>
-  </div>
-</main>
+      <div class="card">
+        <h3>N26 Import</h3>
+        <input id="n26Input" type="file" accept="application/pdf" />
+        <div class="controls">
+          <button id="n26Btn" class="primary">Import N26</button>
+          <span class="small">Zuletzt: <b id="n26Last">–</b></span>
+        </div>
+        <div id="n26Status" class="statuslist"></div>
+      </div>
+    </section>
 
-<footer style="padding:10px;color:#8ea0c6;font-size:12px;">v0.4 — Barclays + N26 Import, jeweils separater Button & Status</footer>
+    <section class="card">
+      <div style="display:flex;gap:12px;align-items:center;">
+        <h3 style="margin:0">Importierte Transaktionen</h3>
+        <span class="chip" id="txCount">0</span>
+        <div style="flex:1"></div>
+        <button id="exportCsv" class="primary">CSV exportieren</button>
+      </div>
+      <table>
+        <thead><tr><th>Bank</th><th>Datum</th><th>Beschreibung</th><th class="num">Betrag (€)</th></tr></thead>
+        <tbody id="txBody"></tbody>
+      </table>
+      <details>
+        <summary>Debug</summary>
+        <pre id="debugText" class="small" style="white-space:pre-wrap;color:#8ea0c6"></pre>
+      </details>
+    </section>
+  </main>
 
-<script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
-<script>
-pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+  <footer>
+    v0.5 — Verbesserter Barclays-Regex (Betrag mit nachgestelltem Vorzeichen), N26 Block-Parser (Beschreibung + Wertstellung + Datum/Betrag).
+  </footer>
 
-const state = { rows: [] };
-const EURO = new Intl.NumberFormat('de-DE',{minimumFractionDigits:2,maximumFractionDigits:2});
+  <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+  <script>
+  pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
 
-async function readPdf(file){
-  const buf = await file.arrayBuffer();
-  const pdf = await pdfjsLib.getDocument({data:buf}).promise;
-  const texts=[];
-  for(let i=1;i<=pdf.numPages;i++){
-    const page=await pdf.getPage(i);
-    const tc=await page.getTextContent();
-    texts.push(tc.items.map(it=>it.str).join('\n'));
-  }
-  return texts.map(s=>s.replace(/\u00A0/g,' ').replace(/\u2212/g,'-'));
-}
+  const EURO = new Intl.NumberFormat('de-DE',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const state = { rows: [] };
 
-// Barclays parser
-function parseBarclays(pages){
-  const results=[];
-  const re=/(\d{2}\.\d{2}\.\d{4})\s+(\d{2}\.\d{2}\.\d{4})\s+(.+?)\s+(\d{1,3}(?:\.\d{3})*,\d{2})([+-])/g;
-  for(const page of pages){
-    const start=page.indexOf('Umsatzübersicht');
-    if(start===-1) continue;
-    const end=page.indexOf('Umsätze Visa Karten-Nr');
-    const seg=page.slice(start,end===-1?undefined:end);
-    let m;
-    while((m=re.exec(seg))){
-      const[,d1,d2,descRaw,amtRaw,sign]=m;
-      if(/Gutschrift Manuelle Lastschrift/i.test(descRaw)) continue;
-      const val=parseFloat(amtRaw.replace(/\./g,'').replace(',','.'))*(sign==='-'?-1:1);
-      results.push({Bank:'Barclays',Datum:d1,Beschreibung:descRaw.trim(),Betrag:val});
+  function normalize(s){ return s.replace(/\u00A0/g,' ').replace(/\u2212/g,'-').replace(/[ \t]+/g,' ').trim(); }
+
+  async function readPdf(file){
+    const buf = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({data:buf}).promise;
+    const texts=[];
+    for(let i=1;i<=pdf.numPages;i++){
+      const page=await pdf.getPage(i);
+      const tc=await page.getTextContent();
+      texts.push(tc.items.map(it=>it.str).join('\n'));
     }
+    return texts.map(t=>t.replace(/\u00A0/g,' ').replace(/\u2212/g,'-'));
   }
-  return results;
-}
 
-// N26 parser (DE)
-function parseN26(pages){
-  const results=[];
-  const re=/(\d{2}\.\d{2}\.\d{4}).*?(\d{1,3}(?:\.\d{3})*,\d{2}-?|-[0-9]{1,3}(?:\.[0-9]{3})*,\d{2}|\d{1,3}(?:\.\d{3})*,\d{2})/;
-  for(const page of pages){
-    for(const line of page.split(/\n/)){
-      const m=line.match(re);
-      if(m){
-        const date=m[1];
-        const amtRaw=m[2];
-        let valStr=amtRaw.replace(/\./g,'').replace(',','.');
-        let val=parseFloat(valStr);
-        if(/-$/.test(amtRaw) || amtRaw.startsWith('-')) val*=-1;
-        const desc=line.replace(m[1],'').replace(m[2],'').trim();
-        if(/Barclays/i.test(desc)) continue;
-        results.push({Bank:'N26',Datum:date,Beschreibung:desc,Betrag:val});
+  function render(){
+    const body=document.getElementById('txBody');
+    body.innerHTML='';
+    for(const r of state.rows){
+      const tr=document.createElement('tr');
+      tr.innerHTML = `<td>${r.Bank}</td><td>${r.Datum}</td><td>${r.Beschreibung}</td><td class="num">${EURO.format(r.Betrag)}</td>`;
+      body.appendChild(tr);
+    }
+    document.getElementById('txCount').textContent=state.rows.length;
+  }
+
+  function pushStatus(el, ok, name, message){
+    const row=document.createElement('div'); row.className='statusrow';
+    const badge=document.createElement('span'); badge.className = ok?'ok':'bad'; badge.textContent= ok?'OK':'Fehler';
+    const nm=document.createElement('span'); nm.className='name'; nm.textContent=name;
+    const msg=document.createElement('span'); msg.className='muted small'; msg.textContent=' – '+message;
+    row.append(badge,nm,msg); el.appendChild(row);
+  }
+
+  // Barclays: robust regex for amount with trailing sign (e.g., 23,00- or 1.078,22+)
+  function parseBarclays(pages){
+    const results=[];
+    const re = /(\d{2}\.\d{2}\.\d{4})\s+(\d{2}\.\d{2}\.\d{4})\s+(.+?)\s+(\d{1,3}(?:\.\d{3})*,\d{2}[-+]?)/g;
+    for(const page of pages){
+      const start = page.indexOf('Umsatzübersicht');
+      if (start === -1) continue;
+      const end = page.indexOf('Umsätze Visa Karten-Nr');
+      const seg = page.slice(start, end === -1 ? undefined : end);
+      let m;
+      while((m = re.exec(seg))){
+        const [, beleg, valuta, descRaw, amtStrRaw] = m;
+        const desc = normalize(descRaw).replace(/\s+(?:[A-Z]{2}\s+)?Visa$/i,'').replace(/\s+[A-Z]{2}$/i,'');
+        if (/Gutschrift Manuelle Lastschrift/i.test(desc)) continue;
+        let amtStr = amtStrRaw;
+        let sign = 1;
+        if (/[+-]$/.test(amtStr)){ sign = amtStr.endsWith('-') ? -1 : 1; amtStr = amtStr.slice(0,-1); }
+        const val = parseFloat(amtStr.replace(/\./g,'').replace(',','.')) * sign;
+        results.push({Bank:'Barclays', Datum: beleg, Beschreibung: desc, Betrag: val});
       }
     }
+    return results;
   }
-  return results;
-}
 
-function render(){
-  const body=document.getElementById('txBody');
-  body.innerHTML='';
-  for(const r of state.rows){
-    const tr=document.createElement('tr');
-    tr.innerHTML=`<td>${r.Bank}</td><td>${r.Datum}</td><td>${r.Beschreibung}</td><td class="num">${EURO.format(r.Betrag)}</td>`;
-    body.appendChild(tr);
+  // N26: block parser (Beschreibung ... Wertstellung dd.mm.yyyy / dd.mm.yyyy Betrag±€)
+  function parseN26(pages){
+    const results=[];
+    const all = pages.join('\n');
+    const lines = all.split(/\n+/).map(l=>l.trim()).filter(l=>l.length>0);
+    const ignore = /^(?:IBAN:|BIC:|Space IBAN:|Mastercard|Gutschriften|Lastschriften|Belastungen|Beschreibung Verbuchungsdatum Betrag|Vorläufiger (?:Space )?Kontoauszug|Spaces Zusammenfassung|JANNING ERIK FLIEGEL|Erstellt am|\d+\s*\/\s*\d+|Space: |Datum geöffnet:|Dein alter Kontostand|Ausgehende Transaktionen|Einkommende Transaktionen|Dein neuer Kontostand)/i;
+    const reWert = /^Wertstellung\s+(\d{2}\.\d{2}\.\d{4})$/;
+    const reDateAmt = /^(\d{2}\.\d{2}\.\d{4})\s+([+\-]?\d{1,3}(?:\.\d{3})*,\d{2}(?:[-+])?)\s*€?$/;
+
+    for (let i=0;i<lines.length;i++){
+      const line = lines[i];
+      const wm = line.match(reWert);
+      if (!wm) continue;
+      const valuta = wm[1];
+      // find amount line in next few lines
+      let posted=null, amtStr=null, j=i+1;
+      for(; j<Math.min(i+6, lines.length); j++){
+        const dm = lines[j].match(reDateAmt);
+        if (dm){ posted=dm[1]; amtStr=dm[2]; break; }
+      }
+      if (!posted) continue;
+      // collect description lines above wertstellung
+      let descParts=[];
+      for(let k=i-1; k>=0 && descParts.length<3; k--){
+        const t = lines[k];
+        if (reWert.test(t)) break;
+        if (ignore.test(t)) { if (descParts.length>0) break; else continue; }
+        // stop if it looks like a date+amount (prev tx)
+        if (reDateAmt.test(t)) break;
+        descParts.unshift(t);
+        // stop if a strong header captured (two lines usually enough)
+        if (descParts.join(' ').length>80) break;
+      }
+      let desc = descParts.join(' — ').trim();
+      if (/Barclays/i.test(desc)) { i=j; continue; } // business rule: ignore
+      // amount
+      let sign=1, a=amtStr;
+      if (a.endsWith('-') || a.startsWith('-')) sign=-1;
+      a=a.replace(/[+\-]$/,'').replace(/^[-+]/,'');
+      const val = parseFloat(a.replace(/\./g,'').replace(',','.')) * sign;
+      results.push({Bank:'N26', Datum: posted, Beschreibung: desc, Betrag: val});
+      i = j; // skip ahead
+    }
+    return results;
   }
-}
 
-function exportCsv(){
-  const lines=['Bank;Datum;Beschreibung;Betrag'];
-  for(const r of state.rows){
-    lines.push([r.Bank,r.Datum,r.Beschreibung.replace(/;/g,','),r.Betrag.toFixed(2).replace('.',',')].join(';'));
+  async function handleImport(bank){
+    const input = document.getElementById(bank+'Input');
+    const statusEl = document.getElementById(bank+'Status');
+    const lastEl = document.getElementById(bank+'Last');
+    statusEl.innerHTML='';
+    const f = input.files?.[0];
+    if(!f){ pushStatus(statusEl,false,'(keine Auswahl)','Keine Datei gewählt'); return; }
+    lastEl.textContent = f.name;
+    try{
+      const pages = (await readPdf(f)).map(t=>t.replace(/[\r]+/g,'\n'));
+      document.getElementById('debugText').textContent = pages.join('\n\n---\n\n').slice(0,20000);
+      let rows = [];
+      if (bank==='barclays') rows = parseBarclays(pages);
+      if (bank==='n26') rows = parseN26(pages);
+      if (rows.length===0) pushStatus(statusEl,false,f.name,'0 Transaktionen erkannt');
+      else { pushStatus(statusEl,true,f.name,`${rows.length} Transaktionen erkannt`); state.rows = state.rows.concat(rows); render(); }
+    }catch(e){
+      console.error(e);
+      pushStatus(statusEl,false,f.name,'Fehler: '+(e?.message||String(e)));
+    }
   }
-  const blob=new Blob(['\ufeff'+lines.join('\n')],{type:'text/csv'});
-  const a=document.createElement('a');
-  a.href=URL.createObjectURL(blob);a.download='transaktionen.csv';a.click();URL.revokeObjectURL(a.href);
-}
 
-document.getElementById('barclaysBtn').onclick=async()=>{
-  const f=document.getElementById('barclaysInput').files[0];
-  if(!f){document.getElementById('barclaysStatus').innerText='Keine Datei gewählt';return;}
-  document.getElementById('barclaysLast').innerText=f.name;
-  try{const pages=await readPdf(f);const rows=parseBarclays(pages);state.rows=state.rows.concat(rows);document.getElementById('barclaysStatus').innerText=`OK: ${rows.length} Transaktionen`;render();}
-  catch(e){document.getElementById('barclaysStatus').innerText='Fehler: '+e.message;}
-};
-document.getElementById('n26Btn').onclick=async()=>{
-  const f=document.getElementById('n26Input').files[0];
-  if(!f){document.getElementById('n26Status').innerText='Keine Datei gewählt';return;}
-  document.getElementById('n26Last').innerText=f.name;
-  try{const pages=await readPdf(f);const rows=parseN26(pages);state.rows=state.rows.concat(rows);document.getElementById('n26Status').innerText=`OK: ${rows.length} Transaktionen`;render();}
-  catch(e){document.getElementById('n26Status').innerText='Fehler: '+e.message;}
-};
-document.getElementById('exportCsv').onclick=exportCsv;
-</script>
+  document.getElementById('barclaysBtn').addEventListener('click', ()=>handleImport('barclays'));
+  document.getElementById('n26Btn').addEventListener('click', ()=>handleImport('n26'));
+  document.getElementById('exportCsv').addEventListener('click', ()=>{
+    const lines=['Bank;Datum;Beschreibung;Betrag'];
+    for(const r of state.rows){
+      const desc = (r.Beschreibung||'').replace(/;/g,',');
+      lines.push([r.Bank,r.Datum,desc,r.Betrag.toFixed(2).replace('.',',')].join(';'));
+    }
+    const blob=new Blob(['\ufeff'+lines.join('\n')],{type:'text/csv;charset=utf-8;'});
+    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='transaktionen.csv'; a.click(); URL.revokeObjectURL(a.href);
+  });
+
+  </script>
 </body>
 </html>
