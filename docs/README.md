@@ -1,1 +1,1 @@
-v0.6: N26 PDF->Excel->Import Pipeline + Barclays Regex fix.
+v0.7: Barclays & N26 beide mit Pipeline PDF → Excel → Import (SheetJS). Barclays-Regex robust; getrennte Buttons/Status.
