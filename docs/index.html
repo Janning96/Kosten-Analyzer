@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Kosten Analyzer — Barclays Import (v0.2)</title>
+    <title>Kosten Analyzer — Barclays Import (v0.3)</title>
     <style>
       :root { --bg:#0b1020; --card:#131a2e; --muted:#8ea0c6; --accent:#6cf; --good:#0a8; --bad:#e55; }
       html,body { margin:0; padding:0; background:var(--bg); color:#e8efff; font:14px/1.5 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; }
@@ -41,18 +41,27 @@
       .statuslist { display:flex; flex-direction:column; gap:6px; }
       .statusrow { display:flex; gap:10px; align-items:center; }
       .statusrow .name { font-weight:600; }
+      /* Accessible file input: visually hidden but still focusable/clickable fallback */
+      .visually-hidden { 
+        position:absolute !important; 
+        left:-9999px !important; 
+        width:1px; height:1px; 
+        overflow:hidden; 
+      }
+      .filelabel { display:inline-flex; align-items:center; gap:8px; border:1px dashed rgba(255,255,255,.25); padding:8px 12px; border-radius:10px; cursor:pointer; }
     </style>
   </head>
   <body>
     <header>
-      <h1>Kosten Analyzer — <span class="muted">Barclays Import (stabil, v0.2)</span></h1>
+      <h1>Kosten Analyzer — <span class="muted">Barclays Import (stabil, v0.3)</span></h1>
     </header>
 
     <main>
       <section class="card">
         <div class="controls">
-          <input id="pdfInput" type="file" accept="application/pdf" multiple style="display:none" />
-          <button id="chooseBtn">PDF(s) auswählen</button>
+          <!-- Fallback: sichtbarer Label-Trigger + echtes Input mit ID (iOS/Safari-sicher) -->
+          <label for="pdfInput" class="filelabel">📎 PDF(s) auswählen</label>
+          <input id="pdfInput" type="file" accept="application/pdf" multiple />
           <button id="importBtn" class="primary">Import</button>
           <span class="spacer"></span>
           <span class="muted small">Unterstützt: Barclays Monats‑PDF. N26 folgt.</span>
@@ -60,6 +69,7 @@
         <div class="small">
           <div>Zuletzt ausgewählte Datei: <b id="lastFile">–</b></div>
           <div class="statuslist" id="statusList"></div>
+          <div id="btnDiag" class="small muted"></div>
         </div>
         <div id="error" class="error hidden"></div>
         <details id="debug"><summary>Debug-Infos</summary>
@@ -95,7 +105,7 @@
     </main>
 
     <footer>
-      <div>v0.2 — <span class="muted">pdf.js v3 (UMD) + workerSrc, Barclays‑Parser segmentiert „Umsatzübersicht“, letzte Datei & Status‑Feedback für Upload/Import.</span></div>
+      <div>v0.3 — <span class="muted">pdf.js v3 (UMD) + workerSrc, iOS/Safari-sichere Datei-Auswahl, Button-Diagnose, Status je Datei.</span></div>
     </footer>
 
     <!-- pdf.js v3 UMD + explicit worker -->
@@ -105,7 +115,6 @@
     <script>
       const els = {
         input: document.getElementById('pdfInput'),
-        chooseBtn: document.getElementById('chooseBtn'),
         importBtn: document.getElementById('importBtn'),
         incTableBody: document.querySelector('#includeTable tbody'),
         excTableBody: document.querySelector('#excludeTable tbody'),
@@ -117,6 +126,7 @@
         debugText: document.getElementById('debugText'),
         lastFile: document.getElementById('lastFile'),
         statusList: document.getElementById('statusList'),
+        btnDiag: document.getElementById('btnDiag'),
       };
 
       const state = {
@@ -124,6 +134,7 @@
         excluded: [],
         lastFileName: null,
         statuses: [], // {name, ok, message}
+        diag: { importBtnWired:false, inputChangeFired:false }
       };
 
       const EURO = new Intl.NumberFormat('de-DE', { style:'decimal', minimumFractionDigits:2, maximumFractionDigits:2 });
@@ -172,7 +183,7 @@
             <td>\${r.Beschreibung}</td>
             <td class="num">\${EURO.format(r.Betrag)}</td>
             <td class="right"></td>\`;
-          const btn = document.createElement('button');
+        const btn = document.createElement('button');
           btn.className = 'iconbtn ' + (toExcluded ? 'minus' : 'plus');
           btn.textContent = toExcluded ? '−' : '+';
           btn.title = toExcluded ? 'Ausschließen' : 'Zurück in Importliste';
@@ -210,6 +221,8 @@
           row.append(badge, name, msg);
           els.statusList.appendChild(row);
         }
+        // button diagnostics
+        els.btnDiag.textContent = `Diag — Import-Button: ${state.diag.importBtnWired?'OK':'NICHT VERBUNDEN'} | Dateiwechsel-Event: ${state.diag.inputChangeFired?'OK':'(noch nicht ausgelöst)'} `;
       }
 
       async function readPdfToText(file){
@@ -253,9 +266,57 @@
         return results;
       }
 
-      // UI handlers
-      els.chooseBtn.addEventListener('click', () => els.input.click());
+      // UI handlers — with diagnostics
+      try {
+        els.importBtn.addEventListener('click', async () => {
+          state.diag.importBtnWired = true;
+          setError('');
+          state.statuses = [];
+          state.included = []; state.excluded = [];
+          const files = els.input.files;
+          if (!files || files.length === 0){
+            setError('Keine Datei gewählt. Bitte zuerst eine Barclays‑PDF auswählen.');
+            state.statuses.push({name:'(keine Auswahl)', ok:false, message:'Kein Upload/Import ausgeführt'});
+            render();
+            return;
+          }
+          try {
+            for (const file of files){
+              const name = file.name;
+              if (!/\.pdf$/i.test(name)){
+                state.statuses.push({name, ok:false, message:'Kein PDF‑Format'});
+                continue;
+              }
+              try {
+                const pages = (await readPdfToText(file)).map(normalizeText);
+                const tx = parseBarclays(pages);
+                if (tx.length === 0){
+                  state.statuses.push({name, ok:false, message:'0 Transaktionen in Umsatzübersicht erkannt'});
+                } else {
+                  state.statuses.push({name, ok:true, message:`${tx.length} Transaktionen erkannt`});
+                  state.included = state.included.concat(tx);
+                  els.debugText.textContent = pages.join('\n\n---\n\n').slice(0, 25000);
+                }
+                state.lastFileName = name;
+              } catch (eFile){
+                state.statuses.push({name, ok:false, message:'Fehler beim Import: ' + (eFile?.message || String(eFile))});
+              }
+            }
+            if (state.included.length === 0){
+              setError('Import fehlgeschlagen oder keine Transaktionen gefunden. Siehe Status‑Liste unten.');
+            }
+            render();
+          } catch (err){
+            console.error(err);
+            setError('Fehler beim Einlesen: ' + (err?.message || String(err)));
+          }
+        }, { once:false });
+      } catch(e){
+        console.warn('Konnte Import-Button nicht verdrahten:', e);
+      }
+
       els.input.addEventListener('change', () => {
+        state.diag.inputChangeFired = true;
         const f = els.input.files?.[0];
         state.lastFileName = f ? f.name : null;
         setError('');
@@ -263,58 +324,17 @@
         render();
       });
 
-      els.importBtn.addEventListener('click', async () => {
-        setError('');
-        state.statuses = [];
-        state.included = []; state.excluded = [];
-        const files = els.input.files;
-        if (!files || files.length === 0){
-          setError('Keine Datei gewählt. Bitte zuerst eine Barclays‑PDF auswählen.');
-          state.statuses.push({name:'(keine Auswahl)', ok:false, message:'Kein Upload/Import ausgeführt'});
-          render();
-          return;
-        }
-        try {
-          const allPages = [];
-          // iterate each file, collect statuses
-          for (const file of files){
-            const name = file.name;
-            if (!/\.pdf$/i.test(name)){
-              state.statuses.push({name, ok:false, message:'Kein PDF‑Format'});
-              continue;
-            }
-            try {
-              const pages = (await readPdfToText(file)).map(normalizeText);
-              const tx = parseBarclays(pages);
-              if (tx.length === 0){
-                state.statuses.push({name, ok:false, message:'0 Transaktionen in Umsatzübersicht erkannt'});
-              } else {
-                state.statuses.push({name, ok:true, message:`${tx.length} Transaktionen erkannt`});
-                state.included = state.included.concat(tx);
-                // keep debug of last file
-                els.debugText.textContent = pages.join('\n\n---\n\n').slice(0, 25000);
-              }
-              state.lastFileName = name;
-            } catch (eFile){
-              state.statuses.push({name, ok:false, message:'Fehler beim Import: ' + (eFile?.message || String(eFile))});
-            }
-          }
-          if (state.included.length === 0){
-            setError('Import fehlgeschlagen oder keine Transaktionen gefunden. Siehe Status‑Liste unten.');
-          }
-          render();
-        } catch (err){
-          console.error(err);
-          setError('Fehler beim Einlesen: ' + (err?.message || String(err)));
-        }
-      });
+      // initial render + small heartbeat to show wiring status after load
+      render();
+      setTimeout(()=>{ render(); }, 500);
 
+      // Clear & export
       els.clearBtn.addEventListener('click', () => {
         state.included = []; state.excluded = []; state.lastFileName = null; state.statuses = [];
         els.input.value = '';
+        state.diag.inputChangeFired = false;
         render();
       });
-
       els.exportBtn.addEventListener('click', () => {
         const csv = toCSV(state.included);
         const blob = new Blob([csv], { type:'text/csv;charset=utf-8;' });
@@ -324,8 +344,6 @@
         a.click();
         URL.revokeObjectURL(a.href);
       });
-
-      render();
     </script>
   </body>
 </html>
