@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Kosten Analyzer — Barclays & N26 Import (v0.4)</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background:#0b1020; color:#e8efff; margin:0; }
+    header { padding:16px 20px; border-bottom:1px solid #333; }
+    h1 { margin:0; font-size:20px; }
+    main { padding:20px; display:grid; gap:16px; }
+    .card { background:#131a2e; padding:16px; border-radius:12px; }
+    button { padding:8px 12px; border-radius:8px; border:none; cursor:pointer; }
+    button.primary { background:#6cf; color:#001633; font-weight:600; }
+    table { width:100%; border-collapse:collapse; margin-top:8px; }
+    th, td { border-bottom:1px solid #333; padding:6px; }
+    th { font-size:12px; text-transform:uppercase; color:#8ea0c6; }
+    .num { text-align:right; }
+    .ok { color:#c4ffd7; }
+    .bad { color:#ffd2d2; }
+  </style>
+</head>
+<body>
+<header><h1>Kosten Analyzer <span style="color:#8ea0c6">(v0.4)</span></h1></header>
+<main>
+  <div class="card">
+    <h3>Barclays Import</h3>
+    <input id="barclaysInput" type="file" accept="application/pdf" style="display:block;margin-bottom:8px;" />
+    <button id="barclaysBtn" class="primary">Import Barclays</button>
+    <div>Zuletzt: <span id="barclaysLast">–</span></div>
+    <div id="barclaysStatus"></div>
+  </div>
+
+  <div class="card">
+    <h3>N26 Import</h3>
+    <input id="n26Input" type="file" accept="application/pdf" style="display:block;margin-bottom:8px;" />
+    <button id="n26Btn" class="primary">Import N26</button>
+    <div>Zuletzt: <span id="n26Last">–</span></div>
+    <div id="n26Status"></div>
+  </div>
+
+  <div class="card">
+    <h3>Importierte Transaktionen</h3>
+    <button id="exportCsv" class="primary">CSV exportieren</button>
+    <table>
+      <thead><tr><th>Bank</th><th>Datum</th><th>Beschreibung</th><th class="num">Betrag</th></tr></thead>
+      <tbody id="txBody"></tbody>
+    </table>
+  </div>
+</main>
+
+<footer style="padding:10px;color:#8ea0c6;font-size:12px;">v0.4 — Barclays + N26 Import, jeweils separater Button & Status</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+
+const state = { rows: [] };
+const EURO = new Intl.NumberFormat('de-DE',{minimumFractionDigits:2,maximumFractionDigits:2});
+
+async function readPdf(file){
+  const buf = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({data:buf}).promise;
+  const texts=[];
+  for(let i=1;i<=pdf.numPages;i++){
+    const page=await pdf.getPage(i);
+    const tc=await page.getTextContent();
+    texts.push(tc.items.map(it=>it.str).join('\n'));
+  }
+  return texts.map(s=>s.replace(/\u00A0/g,' ').replace(/\u2212/g,'-'));
+}
+
+// Barclays parser
+function parseBarclays(pages){
+  const results=[];
+  const re=/(\d{2}\.\d{2}\.\d{4})\s+(\d{2}\.\d{2}\.\d{4})\s+(.+?)\s+(\d{1,3}(?:\.\d{3})*,\d{2})([+-])/g;
+  for(const page of pages){
+    const start=page.indexOf('Umsatzübersicht');
+    if(start===-1) continue;
+    const end=page.indexOf('Umsätze Visa Karten-Nr');
+    const seg=page.slice(start,end===-1?undefined:end);
+    let m;
+    while((m=re.exec(seg))){
+      const[,d1,d2,descRaw,amtRaw,sign]=m;
+      if(/Gutschrift Manuelle Lastschrift/i.test(descRaw)) continue;
+      const val=parseFloat(amtRaw.replace(/\./g,'').replace(',','.'))*(sign==='-'?-1:1);
+      results.push({Bank:'Barclays',Datum:d1,Beschreibung:descRaw.trim(),Betrag:val});
+    }
+  }
+  return results;
+}
+
+// N26 parser (DE)
+function parseN26(pages){
+  const results=[];
+  const re=/(\d{2}\.\d{2}\.\d{4}).*?(\d{1,3}(?:\.\d{3})*,\d{2}-?|-[0-9]{1,3}(?:\.[0-9]{3})*,\d{2}|\d{1,3}(?:\.\d{3})*,\d{2})/;
+  for(const page of pages){
+    for(const line of page.split(/\n/)){
+      const m=line.match(re);
+      if(m){
+        const date=m[1];
+        const amtRaw=m[2];
+        let valStr=amtRaw.replace(/\./g,'').replace(',','.');
+        let val=parseFloat(valStr);
+        if(/-$/.test(amtRaw) || amtRaw.startsWith('-')) val*=-1;
+        const desc=line.replace(m[1],'').replace(m[2],'').trim();
+        if(/Barclays/i.test(desc)) continue;
+        results.push({Bank:'N26',Datum:date,Beschreibung:desc,Betrag:val});
+      }
+    }
+  }
+  return results;
+}
+
+function render(){
+  const body=document.getElementById('txBody');
+  body.innerHTML='';
+  for(const r of state.rows){
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td>${r.Bank}</td><td>${r.Datum}</td><td>${r.Beschreibung}</td><td class="num">${EURO.format(r.Betrag)}</td>`;
+    body.appendChild(tr);
+  }
+}
+
+function exportCsv(){
+  const lines=['Bank;Datum;Beschreibung;Betrag'];
+  for(const r of state.rows){
+    lines.push([r.Bank,r.Datum,r.Beschreibung.replace(/;/g,','),r.Betrag.toFixed(2).replace('.',',')].join(';'));
+  }
+  const blob=new Blob(['\ufeff'+lines.join('\n')],{type:'text/csv'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);a.download='transaktionen.csv';a.click();URL.revokeObjectURL(a.href);
+}
+
+document.getElementById('barclaysBtn').onclick=async()=>{
+  const f=document.getElementById('barclaysInput').files[0];
+  if(!f){document.getElementById('barclaysStatus').innerText='Keine Datei gewählt';return;}
+  document.getElementById('barclaysLast').innerText=f.name;
+  try{const pages=await readPdf(f);const rows=parseBarclays(pages);state.rows=state.rows.concat(rows);document.getElementById('barclaysStatus').innerText=`OK: ${rows.length} Transaktionen`;render();}
+  catch(e){document.getElementById('barclaysStatus').innerText='Fehler: '+e.message;}
+};
+document.getElementById('n26Btn').onclick=async()=>{
+  const f=document.getElementById('n26Input').files[0];
+  if(!f){document.getElementById('n26Status').innerText='Keine Datei gewählt';return;}
+  document.getElementById('n26Last').innerText=f.name;
+  try{const pages=await readPdf(f);const rows=parseN26(pages);state.rows=state.rows.concat(rows);document.getElementById('n26Status').innerText=`OK: ${rows.length} Transaktionen`;render();}
+  catch(e){document.getElementById('n26Status').innerText='Fehler: '+e.message;}
+};
+document.getElementById('exportCsv').onclick=exportCsv;
+</script>
+</body>
+</html>
