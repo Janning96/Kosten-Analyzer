@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Kosten Analyzer — Barclays & N26 Import (v0.5)</title>
+  <title>Kosten Analyzer — Barclays & N26 (v0.6)</title>
   <style>
     :root { --bg:#0b1020; --card:#131a2e; --muted:#8ea0c6; --accent:#6cf; --good:#0a8; --bad:#e55; }
     html,body { margin:0; padding:0; background:var(--bg); color:#e8efff; font:14px/1.5 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; }
@@ -37,7 +37,7 @@
 </head>
 <body>
   <header>
-    <h1>Kosten Analyzer — <span class="muted">Barclays & N26</span> <span class="chip">v0.5</span></h1>
+    <h1>Kosten Analyzer — <span class="muted">Barclays & N26</span> <span class="chip">v0.6</span></h1>
   </header>
 
   <main>
@@ -56,7 +56,8 @@
         <h3>N26 Import</h3>
         <input id="n26Input" type="file" accept="application/pdf" />
         <div class="controls">
-          <button id="n26Btn" class="primary">Import N26</button>
+          <button id="n26Btn" class="primary">PDF → Excel → Import</button>
+          <button id="n26ExportXlsx">Excel exportieren</button>
           <span class="small">Zuletzt: <b id="n26Last">–</b></span>
         </div>
         <div id="n26Status" class="statuslist"></div>
@@ -82,18 +83,37 @@
   </main>
 
   <footer>
-    v0.5 — Verbesserter Barclays-Regex (Betrag mit nachgestelltem Vorzeichen), N26 Block-Parser (Beschreibung + Wertstellung + Datum/Betrag).
+    v0.6 — N26: PDF → Excel (SheetJS) und Import aus Excel; Barclays: Betrag mit nachgestelltem Vorzeichen; Status & Zuletzt-Datei je Bank.
   </footer>
 
+  <!-- pdf.js -->
   <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+  <script>pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';</script>
+
+  <!-- SheetJS for Excel -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
   <script>
-  pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
-
   const EURO = new Intl.NumberFormat('de-DE',{minimumFractionDigits:2,maximumFractionDigits:2});
-  const state = { rows: [] };
+  const state = { rows: [], lastXlsxBlob: null };
 
-  function normalize(s){ return s.replace(/\u00A0/g,' ').replace(/\u2212/g,'-').replace(/[ \t]+/g,' ').trim(); }
-
+  function pushStatus(el, ok, name, message){
+    const row=document.createElement('div'); row.className='statusrow';
+    const badge=document.createElement('span'); badge.className = ok?'ok':'bad'; badge.textContent= ok?'OK':'Fehler';
+    const nm=document.createElement('span'); nm.className='name'; nm.textContent=name;
+    const msg=document.createElement('span'); msg.className='muted small'; msg.textContent=' – '+message;
+    row.append(badge,nm,msg); el.appendChild(row);
+  }
+  function render(){
+    const body=document.getElementById('txBody');
+    body.innerHTML='';
+    for(const r of state.rows){
+      const tr=document.createElement('tr');
+      tr.innerHTML = `<td>${r.Bank}</td><td>${r.Datum}</td><td>${r.Beschreibung}</td><td class="num">${EURO.format(r.Betrag)}</td>`;
+      body.appendChild(tr);
+    }
+    document.getElementById('txCount').textContent=state.rows.length;
+  }
   async function readPdf(file){
     const buf = await file.arrayBuffer();
     const pdf = await pdfjsLib.getDocument({data:buf}).promise;
@@ -106,26 +126,7 @@
     return texts.map(t=>t.replace(/\u00A0/g,' ').replace(/\u2212/g,'-'));
   }
 
-  function render(){
-    const body=document.getElementById('txBody');
-    body.innerHTML='';
-    for(const r of state.rows){
-      const tr=document.createElement('tr');
-      tr.innerHTML = `<td>${r.Bank}</td><td>${r.Datum}</td><td>${r.Beschreibung}</td><td class="num">${EURO.format(r.Betrag)}</td>`;
-      body.appendChild(tr);
-    }
-    document.getElementById('txCount').textContent=state.rows.length;
-  }
-
-  function pushStatus(el, ok, name, message){
-    const row=document.createElement('div'); row.className='statusrow';
-    const badge=document.createElement('span'); badge.className = ok?'ok':'bad'; badge.textContent= ok?'OK':'Fehler';
-    const nm=document.createElement('span'); nm.className='name'; nm.textContent=name;
-    const msg=document.createElement('span'); msg.className='muted small'; msg.textContent=' – '+message;
-    row.append(badge,nm,msg); el.appendChild(row);
-  }
-
-  // Barclays: robust regex for amount with trailing sign (e.g., 23,00- or 1.078,22+)
+  // Barclays parser: Betrag mit optional nachgestelltem Zeichen (z.B. 23,00-)
   function parseBarclays(pages){
     const results=[];
     const re = /(\d{2}\.\d{2}\.\d{4})\s+(\d{2}\.\d{2}\.\d{4})\s+(.+?)\s+(\d{1,3}(?:\.\d{3})*,\d{2}[-+]?)/g;
@@ -137,10 +138,11 @@
       let m;
       while((m = re.exec(seg))){
         const [, beleg, valuta, descRaw, amtStrRaw] = m;
-        const desc = normalize(descRaw).replace(/\s+(?:[A-Z]{2}\s+)?Visa$/i,'').replace(/\s+[A-Z]{2}$/i,'');
+        let desc = descRaw.replace(/\s+/g,' ').trim().replace(/\s+(?:[A-Z]{2}\s+)?Visa$/i,'').replace(/\s+[A-Z]{2}$/i,'');
         if (/Gutschrift Manuelle Lastschrift/i.test(desc)) continue;
-        let amtStr = amtStrRaw;
-        let sign = 1;
+        // clean special AIRBNB pattern
+        desc = desc.replace(/(\bAIRBNB)\s*\*.*$/i,'$1');
+        let amtStr = amtStrRaw; let sign=1;
         if (/[+-]$/.test(amtStr)){ sign = amtStr.endsWith('-') ? -1 : 1; amtStr = amtStr.slice(0,-1); }
         const val = parseFloat(amtStr.replace(/\./g,'').replace(',','.')) * sign;
         results.push({Bank:'Barclays', Datum: beleg, Beschreibung: desc, Betrag: val});
@@ -149,52 +151,61 @@
     return results;
   }
 
-  // N26: block parser (Beschreibung ... Wertstellung dd.mm.yyyy / dd.mm.yyyy Betrag±€)
+  // N26 block parser: Beschreibung ... / Wertstellung dd.mm.yyyy / dd.mm.yyyy / ±Betrag€ (3-Zeilen-Variante)
   function parseN26(pages){
     const results=[];
     const all = pages.join('\n');
-    const lines = all.split(/\n+/).map(l=>l.trim()).filter(l=>l.length>0);
-    const ignore = /^(?:IBAN:|BIC:|Space IBAN:|Mastercard|Gutschriften|Lastschriften|Belastungen|Beschreibung Verbuchungsdatum Betrag|Vorläufiger (?:Space )?Kontoauszug|Spaces Zusammenfassung|JANNING ERIK FLIEGEL|Erstellt am|\d+\s*\/\s*\d+|Space: |Datum geöffnet:|Dein alter Kontostand|Ausgehende Transaktionen|Einkommende Transaktionen|Dein neuer Kontostand)/i;
+    const lines = all.split(/\n+/).map(l=>l.trim()).filter(Boolean);
+    const ignore = /^(?:IBAN:|BIC:|Space IBAN:|Mastercard|Gutschriften|Lastschriften|Belastungen|Beschreibung Verbuchungsdatum Betrag|Vorläufiger (?:Space )?Kontoauszug|Spaces Zusammenfassung|JANNING ERIK FLIEGEL|Erstellt am|Seite \d+ von \d+|\d+\s*\/\s*\d+|Datum geöffnet:|Dein alter Kontostand|Dein neuer Kontostand|Ausgehende Transaktionen|Einkommende Transaktionen)$/i;
     const reWert = /^Wertstellung\s+(\d{2}\.\d{2}\.\d{4})$/;
-    const reDateAmt = /^(\d{2}\.\d{2}\.\d{4})\s+([+\-]?\d{1,3}(?:\.\d{3})*,\d{2}(?:[-+])?)\s*€?$/;
+    const reDate = /^(\d{2}\.\d{2}\.\d{4})$/;
+    const reAmt = /^([+\-]?\d{1,3}(?:\.\d{3})*,\d{2}(?:[-+])?)\s*€?$/;
 
     for (let i=0;i<lines.length;i++){
-      const line = lines[i];
-      const wm = line.match(reWert);
+      const wm = lines[i].match(reWert);
       if (!wm) continue;
-      const valuta = wm[1];
-      // find amount line in next few lines
-      let posted=null, amtStr=null, j=i+1;
-      for(; j<Math.min(i+6, lines.length); j++){
-        const dm = lines[j].match(reDateAmt);
-        if (dm){ posted=dm[1]; amtStr=dm[2]; break; }
-      }
-      if (!posted) continue;
-      // collect description lines above wertstellung
-      let descParts=[];
-      for(let k=i-1; k>=0 && descParts.length<3; k--){
+      // Buchungsdatum in der nächsten Zeile
+      if (i+1 >= lines.length || !reDate.test(lines[i+1])) continue;
+      const datum = lines[i+1];
+      // Betrag in der Zeile danach
+      if (i+2 >= lines.length || !reAmt.test(lines[i+2])) continue;
+      const amtRaw = lines[i+2].match(reAmt)[1];
+      // Beschreibung = vorangehende nicht-ignorierte Zeilen bis zur vorherigen Wertstellung
+      let k = i-1; const descParts=[];
+      while (k>=0 && !reWert.test(lines[k])){
         const t = lines[k];
-        if (reWert.test(t)) break;
-        if (ignore.test(t)) { if (descParts.length>0) break; else continue; }
-        // stop if it looks like a date+amount (prev tx)
-        if (reDateAmt.test(t)) break;
+        if (ignore.test(t)) { k--; continue; }
+        if (reDate.test(t) || reAmt.test(t)) break;
         descParts.unshift(t);
-        // stop if a strong header captured (two lines usually enough)
-        if (descParts.join(' ').length>80) break;
+        if (descParts.join(' ').length>120) break;
+        k--;
       }
       let desc = descParts.join(' — ').trim();
-      if (/Barclays/i.test(desc)) { i=j; continue; } // business rule: ignore
-      // amount
-      let sign=1, a=amtStr;
+      if (!desc) continue;
+      if (/Barclays/i.test(desc)) { i += 2; continue; } // ignorieren
+      let sign=1, a=amtRaw;
       if (a.endsWith('-') || a.startsWith('-')) sign=-1;
       a=a.replace(/[+\-]$/,'').replace(/^[-+]/,'');
       const val = parseFloat(a.replace(/\./g,'').replace(',','.')) * sign;
-      results.push({Bank:'N26', Datum: posted, Beschreibung: desc, Betrag: val});
-      i = j; // skip ahead
+      results.push({Bank:'N26', Datum: datum, Beschreibung: desc, Betrag: val});
+      i += 2; // wir sind bis zur Betragzeile gegangen
     }
     return results;
   }
 
+  // Excel helper (SheetJS)
+  function rowsToXlsxBlob(rows, sheetName='Transaktionen'){
+    const header = ['Bank','Buchungstag','Wertstellung','Beschreibung','BeschreibungOriginal','Betrag'];
+    const aoa = [header];
+    for(const r of rows){
+      aoa.push([r.Bank, r.Datum, r.Datum, r.Beschreibung, r.Beschreibung, r.Betrag]);
+    }
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, sheetName);
+    const wbout = XLSX.write(wb, {bookType:'xlsx', type:'array'});
+    return new Blob([wbout], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+  }
   async function handleImport(bank){
     const input = document.getElementById(bank+'Input');
     const statusEl = document.getElementById(bank+'Status');
@@ -206,19 +217,41 @@
     try{
       const pages = (await readPdf(f)).map(t=>t.replace(/[\r]+/g,'\n'));
       document.getElementById('debugText').textContent = pages.join('\n\n---\n\n').slice(0,20000);
-      let rows = [];
-      if (bank==='barclays') rows = parseBarclays(pages);
-      if (bank==='n26') rows = parseN26(pages);
-      if (rows.length===0) pushStatus(statusEl,false,f.name,'0 Transaktionen erkannt');
-      else { pushStatus(statusEl,true,f.name,`${rows.length} Transaktionen erkannt`); state.rows = state.rows.concat(rows); render(); }
+      let rows = bank==='barclays' ? parseBarclays(pages) : parseN26(pages);
+      if (rows.length===0) { pushStatus(statusEl,false,f.name,'0 Transaktionen erkannt'); return; }
+      pushStatus(statusEl,true,f.name,`${rows.length} Transaktionen erkannt`);
+      if (bank==='n26'){
+        // 1) Excel erzeugen und Download anbieten
+        const blob = rowsToXlsxBlob(rows, 'N26');
+        state.lastXlsxBlob = blob;
+        const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='N26_Transaktionen.xlsx'; a.click(); URL.revokeObjectURL(a.href);
+        // 2) Excel direkt wieder einlesen (Nachweis der Pipeline)
+        const data = await blob.arrayBuffer();
+        const wb = XLSX.read(data, {type:'array'});
+        const sheet = wb.Sheets[wb.SheetNames[0]];
+        const json = XLSX.utils.sheet_to_json(sheet, {header:1});
+        const parsed=[];
+        for(let i=1;i<json.length;i++){
+          const row=json[i];
+          if (!row || row.length<6) continue;
+          parsed.push({Bank:String(row[0]||'N26'), Datum:String(row[1]||''), Beschreibung:String(row[3]||''), Betrag: Number(String(row[5]||'0').toString().replace(',','.'))});
+        }
+        state.rows = state.rows.concat(parsed);
+      } else {
+        state.rows = state.rows.concat(rows);
+      }
+      render();
     }catch(e){
       console.error(e);
       pushStatus(statusEl,false,f.name,'Fehler: '+(e?.message||String(e)));
     }
   }
-
   document.getElementById('barclaysBtn').addEventListener('click', ()=>handleImport('barclays'));
   document.getElementById('n26Btn').addEventListener('click', ()=>handleImport('n26'));
+  document.getElementById('n26ExportXlsx').addEventListener('click', ()=>{
+    if(!state.lastXlsxBlob){ alert('Noch keine N26-Daten erzeugt. Importiere zuerst eine N26-PDF.'); return; }
+    const a=document.createElement('a'); a.href=URL.createObjectURL(state.lastXlsxBlob); a.download='N26_Transaktionen.xlsx'; a.click(); URL.revokeObjectURL(a.href);
+  });
   document.getElementById('exportCsv').addEventListener('click', ()=>{
     const lines=['Bank;Datum;Beschreibung;Betrag'];
     for(const r of state.rows){
@@ -228,7 +261,6 @@
     const blob=new Blob(['\ufeff'+lines.join('\n')],{type:'text/csv;charset=utf-8;'});
     const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='transaktionen.csv'; a.click(); URL.revokeObjectURL(a.href);
   });
-
   </script>
 </body>
 </html>

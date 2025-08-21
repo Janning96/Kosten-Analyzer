@@ -1,1 +1,1 @@
-Kosten Analyzer v0.5 — Barclays+N26 Parser Fix.
+v0.6: N26 PDF->Excel->Import Pipeline + Barclays Regex fix.
