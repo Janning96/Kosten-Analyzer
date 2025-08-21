@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Kosten Analyzer — Barclays Import (v0.3)</title>
+    <title>Kosten Analyzer — Barclays Import (v0.3.1)</title>
     <style>
       :root { --bg:#0b1020; --card:#131a2e; --muted:#8ea0c6; --accent:#6cf; --good:#0a8; --bad:#e55; }
       html,body { margin:0; padding:0; background:var(--bg); color:#e8efff; font:14px/1.5 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; }
@@ -20,11 +20,10 @@
       button.danger { background:#2b1730; color:#ffd8df; border-color:#723; }
       table { width:100%; border-collapse:collapse; }
       th, td { text-align:left; padding:8px 6px; border-bottom:1px dashed rgba(255,255,255,.08); vertical-align:top; }
-      th { font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); }
+      th { font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:#e8efff99; }
       tbody tr:hover { background:rgba(255,255,255,.03); }
       .num { text-align:right; font-variant-numeric:tabular-nums; }
       .chip { display:inline-block; padding:2px 8px; border-radius:999px; background:#1f2746; color:#b7c7f0; font-size:12px; }
-      .pill { display:inline-flex; align-items:center; gap:6px; background:#17234f; border:1px solid rgba(255,255,255,.12); padding:6px 10px; border-radius:999px; }
       details { margin-top:10px; }
       .small { font-size:12px; }
       .right { text-align:right; }
@@ -32,7 +31,7 @@
       .iconbtn { width:28px; height:28px; border-radius:8px; display:inline-grid; place-items:center; font-weight:700; }
       .iconbtn.minus { background:#2a1a1a; color:#ffb0b0; border:1px solid #5a2a2a; }
       .iconbtn.plus { background:#152a19; color:#a8ffcf; border:1px solid #295a39; }
-      footer { color:var(--muted); font-size:12px; padding:16px 20px; border-top:1px solid rgba(255,255,255,.08); }
+      footer { color:#8ea0c6; font-size:12px; padding:16px 20px; border-top:1px solid rgba(255,255,255,.08); }
       .grid2 { display:grid; grid-template-columns:1fr auto auto; gap:10px; align-items:center; }
       .hidden { display:none; }
       .error { color:#ffbaba; background:#3a1a1a; border:1px solid #a33; padding:10px; border-radius:10px; }
@@ -41,26 +40,20 @@
       .statuslist { display:flex; flex-direction:column; gap:6px; }
       .statusrow { display:flex; gap:10px; align-items:center; }
       .statusrow .name { font-weight:600; }
-      /* Accessible file input: visually hidden but still focusable/clickable fallback */
-      .visually-hidden { 
-        position:absolute !important; 
-        left:-9999px !important; 
-        width:1px; height:1px; 
-        overflow:hidden; 
-      }
-      .filelabel { display:inline-flex; align-items:center; gap:8px; border:1px dashed rgba(255,255,255,.25); padding:8px 12px; border-radius:10px; cursor:pointer; }
+      .diag { margin-top:8px; font-size:12px; }
+      .diag b { color:#fff; }
+      input[type=file] { background:#0f1a3a; border:1px solid rgba(255,255,255,.12); padding:10px; border-radius:10px; color:#cfe4ff; }
     </style>
   </head>
   <body>
     <header>
-      <h1>Kosten Analyzer — <span class="muted">Barclays Import (stabil, v0.3)</span></h1>
+      <h1>Kosten Analyzer — <span class="muted">Barclays Import (stabil, v0.3.1)</span></h1>
     </header>
 
     <main>
       <section class="card">
         <div class="controls">
-          <!-- Fallback: sichtbarer Label-Trigger + echtes Input mit ID (iOS/Safari-sicher) -->
-          <label for="pdfInput" class="filelabel">📎 PDF(s) auswählen</label>
+          <label for="pdfInput">📎 PDF(s) auswählen</label>
           <input id="pdfInput" type="file" accept="application/pdf" multiple />
           <button id="importBtn" class="primary">Import</button>
           <span class="spacer"></span>
@@ -69,7 +62,7 @@
         <div class="small">
           <div>Zuletzt ausgewählte Datei: <b id="lastFile">–</b></div>
           <div class="statuslist" id="statusList"></div>
-          <div id="btnDiag" class="small muted"></div>
+          <div class="diag" id="diagLine">Diag: Import-Button: <b id="diagImport">NICHT VERBUNDEN</b> • Dateiwechsel-Event: <b id="diagChange">NOCH NICHT</b></div>
         </div>
         <div id="error" class="error hidden"></div>
         <details id="debug"><summary>Debug-Infos</summary>
@@ -105,7 +98,7 @@
     </main>
 
     <footer>
-      <div>v0.3 — <span class="muted">pdf.js v3 (UMD) + workerSrc, iOS/Safari-sichere Datei-Auswahl, Button-Diagnose, Status je Datei.</span></div>
+      <div>v0.3.1 — <span class="muted">.nojekyll hinzugefügt • pdf.js v3 (UMD) + workerSrc • iOS-sichere Dateiauswahl • Button-Diagnose • Barclays-Parser segmentiert „Umsatzübersicht“. </span></div>
     </footer>
 
     <!-- pdf.js v3 UMD + explicit worker -->
@@ -126,7 +119,8 @@
         debugText: document.getElementById('debugText'),
         lastFile: document.getElementById('lastFile'),
         statusList: document.getElementById('statusList'),
-        btnDiag: document.getElementById('btnDiag'),
+        diagImport: document.getElementById('diagImport'),
+        diagChange: document.getElementById('diagChange'),
       };
 
       const state = {
@@ -134,7 +128,6 @@
         excluded: [],
         lastFileName: null,
         statuses: [], // {name, ok, message}
-        diag: { importBtnWired:false, inputChangeFired:false }
       };
 
       const EURO = new Intl.NumberFormat('de-DE', { style:'decimal', minimumFractionDigits:2, maximumFractionDigits:2 });
@@ -183,7 +176,7 @@
             <td>\${r.Beschreibung}</td>
             <td class="num">\${EURO.format(r.Betrag)}</td>
             <td class="right"></td>\`;
-        const btn = document.createElement('button');
+          const btn = document.createElement('button');
           btn.className = 'iconbtn ' + (toExcluded ? 'minus' : 'plus');
           btn.textContent = toExcluded ? '−' : '+';
           btn.title = toExcluded ? 'Ausschließen' : 'Zurück in Importliste';
@@ -221,8 +214,6 @@
           row.append(badge, name, msg);
           els.statusList.appendChild(row);
         }
-        // button diagnostics
-        els.btnDiag.textContent = `Diag — Import-Button: ${state.diag.importBtnWired?'OK':'NICHT VERBUNDEN'} | Dateiwechsel-Event: ${state.diag.inputChangeFired?'OK':'(noch nicht ausgelöst)'} `;
       }
 
       async function readPdfToText(file){
@@ -266,84 +257,67 @@
         return results;
       }
 
-      // UI handlers — with diagnostics
-      try {
-        els.importBtn.addEventListener('click', async () => {
-          state.diag.importBtnWired = true;
-          setError('');
-          state.statuses = [];
-          state.included = []; state.excluded = [];
-          const files = els.input.files;
-          if (!files || files.length === 0){
-            setError('Keine Datei gewählt. Bitte zuerst eine Barclays‑PDF auswählen.');
-            state.statuses.push({name:'(keine Auswahl)', ok:false, message:'Kein Upload/Import ausgeführt'});
+      function installHandlers(){
+        if (els.importBtn){
+          els.importBtn.addEventListener('click', doImport, {once:false});
+          els.diagImport.textContent = 'OK';
+        }
+        if (els.input){
+          els.input.addEventListener('change', () => {
+            const f = els.input.files?.[0];
+            state.lastFileName = f ? f.name : null;
+            state.statuses = [];
+            els.diagChange.textContent = 'OK';
             render();
-            return;
-          }
-          try {
-            for (const file of files){
-              const name = file.name;
-              if (!/\.pdf$/i.test(name)){
-                state.statuses.push({name, ok:false, message:'Kein PDF‑Format'});
-                continue;
-              }
-              try {
-                const pages = (await readPdfToText(file)).map(normalizeText);
-                const tx = parseBarclays(pages);
-                if (tx.length === 0){
-                  state.statuses.push({name, ok:false, message:'0 Transaktionen in Umsatzübersicht erkannt'});
-                } else {
-                  state.statuses.push({name, ok:true, message:`${tx.length} Transaktionen erkannt`});
-                  state.included = state.included.concat(tx);
-                  els.debugText.textContent = pages.join('\n\n---\n\n').slice(0, 25000);
-                }
-                state.lastFileName = name;
-              } catch (eFile){
-                state.statuses.push({name, ok:false, message:'Fehler beim Import: ' + (eFile?.message || String(eFile))});
-              }
-            }
-            if (state.included.length === 0){
-              setError('Import fehlgeschlagen oder keine Transaktionen gefunden. Siehe Status‑Liste unten.');
-            }
-            render();
-          } catch (err){
-            console.error(err);
-            setError('Fehler beim Einlesen: ' + (err?.message || String(err)));
-          }
-        }, { once:false });
-      } catch(e){
-        console.warn('Konnte Import-Button nicht verdrahten:', e);
+          }, {once:false});
+        }
       }
 
-      els.input.addEventListener('change', () => {
-        state.diag.inputChangeFired = true;
-        const f = els.input.files?.[0];
-        state.lastFileName = f ? f.name : null;
+      async function doImport(){
         setError('');
         state.statuses = [];
-        render();
-      });
+        state.included = []; state.excluded = [];
+        const files = els.input.files;
+        if (!files || files.length === 0){
+          setError('Keine Datei gewählt. Bitte zuerst eine Barclays‑PDF auswählen.');
+          state.statuses.push({name:'(keine Auswahl)', ok:false, message:'Kein Upload/Import ausgeführt'});
+          render();
+          return;
+        }
+        try {
+          for (const file of files){
+            const name = file.name;
+            if (!/\.pdf$/i.test(name)){
+              state.statuses.push({name, ok:false, message:'Kein PDF‑Format'});
+              continue;
+            }
+            try {
+              const pages = (await readPdfToText(file)).map(normalizeText);
+              const tx = parseBarclays(pages);
+              if (tx.length === 0){
+                state.statuses.push({name, ok:false, message:'0 Transaktionen in Umsatzübersicht erkannt'});
+              } else {
+                state.statuses.push({name, ok:true, message:`${tx.length} Transaktionen erkannt`});
+                state.included = state.included.concat(tx);
+                els.debugText.textContent = pages.join('\n\n---\n\n').slice(0, 25000);
+              }
+              state.lastFileName = name;
+            } catch (eFile){
+              state.statuses.push({name, ok:false, message:'Fehler beim Import: ' + (eFile?.message || String(eFile))});
+            }
+          }
+          if (state.included.length === 0){
+            setError('Import fehlgeschlagen oder keine Transaktionen gefunden. Siehe Status‑Liste unten.');
+          }
+          render();
+        } catch (err){
+          console.error(err);
+          setError('Fehler beim Einlesen: ' + (err?.message || String(err)));
+        }
+      }
 
-      // initial render + small heartbeat to show wiring status after load
+      installHandlers();
       render();
-      setTimeout(()=>{ render(); }, 500);
-
-      // Clear & export
-      els.clearBtn.addEventListener('click', () => {
-        state.included = []; state.excluded = []; state.lastFileName = null; state.statuses = [];
-        els.input.value = '';
-        state.diag.inputChangeFired = false;
-        render();
-      });
-      els.exportBtn.addEventListener('click', () => {
-        const csv = toCSV(state.included);
-        const blob = new Blob([csv], { type:'text/csv;charset=utf-8;' });
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = 'transaktionen.csv';
-        a.click();
-        URL.revokeObjectURL(a.href);
-      });
     </script>
   </body>
 </html>
