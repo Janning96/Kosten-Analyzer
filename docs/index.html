@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Kosten Analyzer — Barclays & N26 (v0.7a)</title>
+  <title>Kosten Analyzer — Barclays & N26 (v0.8)</title>
   <style>
     :root { --bg:#0b1020; --card:#131a2e; --muted:#8ea0c6; --accent:#6cf; --good:#0a8; --bad:#e55; }
     html,body { margin:0; padding:0; background:var(--bg); color:#e8efff; font:14px/1.5 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; }
@@ -15,27 +15,30 @@
     .muted { color:var(--muted); }
     .controls { display:flex; flex-wrap:wrap; gap:8px 12px; align-items:center; }
     input[type=file] { display:block; margin:6px 0 10px; }
-    button { background:#1c2545; border:1px solid rgba(255,255,255,.12); color:#fff; padding:10px 14px; border-radius:12px; cursor:pointer; }
+    button { background:#1c2545; border:1px solid rgba(255,255,255,.12); color:#fff; padding:8px 12px; border-radius:10px; cursor:pointer; }
     button:hover { background:#212b56; }
     button.primary { background:var(--accent); color:#001633; border:none; font-weight:600; }
     table { width:100%; border-collapse:collapse; }
     th, td { text-align:left; padding:8px 6px; border-bottom:1px dashed rgba(255,255,255,.08); vertical-align:top; }
     th { font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); }
+    tbody tr:hover { background:rgba(255,255,255,.03); }
     .num { text-align:right; font-variant-numeric:tabular-nums; }
     .chip { display:inline-block; padding:2px 8px; border-radius:999px; background:#1f2746; color:#b7c7f0; font-size:12px; }
     .small { font-size:12px; }
     .statuslist { display:flex; flex-direction:column; gap:6px; }
-    .statusrow { display:flex; gap:10px; align-items:center; }
-    .statusrow .name { font-weight:600; }
-    .ok { color:#c4ffd7; background:#153123; border:1px solid #285a39; padding:2px 6px; border-radius:6px; font-size:12px; }
-    .bad { color:#ffd2d2; background:#3a1a1a; border:1px solid #6d2a2a; padding:2px 6px; border-radius:6px; font-size:12px; }
     details { margin-top:10px; }
-    footer { color:var(--muted); font-size:12px; padding:16px 20px; border-top:1px solid rgba(255,255,255,.08); }
+    footer { color:#8ea0c6; font-size:12px; padding:16px 20px; border-top:1px solid rgba(255,255,255,.08); }
+    .iconbtn{ width:28px;height:28px;border-radius:8px; display:inline-grid; place-items:center; font-weight:700; }
+    .minus{ background:#2a1a1a; color:#ffb0b0; border:1px solid #5a2a2a; }
+    .plus{ background:#152a19; color:#a8ffcf; border:1px solid #295a39; }
+    .grid-head{ display:grid; grid-template-columns: 1fr auto auto auto; gap:10px; align-items:center;}
+    .filters{ display:flex; gap:10px; align-items:center; flex-wrap:wrap;}
+    input[type=date]{ background:#101831; border:1px solid rgba(255,255,255,.12); color:#e8efff; padding:6px 8px; border-radius:8px; }
   </style>
 </head>
 <body>
   <header>
-    <h1>Kosten Analyzer — <span class="muted">Barclays & N26</span> <span class="chip">v0.7a</span></h1>
+    <h1>Kosten Analyzer — <span class="muted">Barclays & N26</span> <span class="chip">v0.8</span></h1>
   </header>
 
   <main>
@@ -45,7 +48,6 @@
         <input id="barclaysInput" type="file" accept="application/pdf" />
         <div class="controls">
           <button id="barclaysBtn" class="primary">PDF → Excel → Import (Barclays)</button>
-          <button id="barclaysExportXlsx">Excel herunterladen</button>
           <span class="small">Zuletzt: <b id="barclaysLast">–</b></span>
         </div>
         <div id="barclaysStatus" class="statuslist"></div>
@@ -56,7 +58,6 @@
         <input id="n26Input" type="file" accept="application/pdf" />
         <div class="controls">
           <button id="n26Btn" class="primary">PDF → Excel → Import (N26)</button>
-          <button id="n26ExportXlsx">Excel herunterladen</button>
           <span class="small">Zuletzt: <b id="n26Last">–</b></span>
         </div>
         <div id="n26Status" class="statuslist"></div>
@@ -64,16 +65,32 @@
     </section>
 
     <section class="card">
-      <div style="display:flex;gap:12px;align-items:center;">
-        <h3 style="margin:0">Importierte Transaktionen</h3>
-        <span class="chip" id="txCount">0</span>
-        <div style="flex:1"></div>
-        <button id="exportCsv" class="primary">CSV exportieren</button>
+      <div class="grid-head">
+        <h3 style="margin:0">Liste 1 – Importiert <span id="incCount" class="chip">0</span></h3>
+        <div class="filters small">
+          <span>Von</span><input id="fromDate" type="date"/>
+          <span>Bis</span><input id="toDate" type="date"/>
+          <button id="applyFilter">Filtern</button>
+          <button id="clearFilter">Reset</button>
+        </div>
+        <div></div>
+        <button id="exportExcel" class="primary">Excel exportieren (Liste 1)</button>
       </div>
-      <table>
-        <thead><tr><th>Bank</th><th>Belegdatum</th><th>Valuta</th><th>Beschreibung</th><th class="num">Betrag (€)</th></tr></thead>
-        <tbody id="txBody"></tbody>
+      <table id="includeTable">
+        <thead><tr><th>Bank</th><th>Datum</th><th>Beschreibung</th><th class="num">Betrag (€)</th><th></th></tr></thead>
+        <tbody></tbody>
       </table>
+    </section>
+
+    <section class="card">
+      <h3 style="margin:0">Liste 2 – Ausgeschlossen <span id="excCount" class="chip">0</span></h3>
+      <table id="excludeTable">
+        <thead><tr><th>Bank</th><th>Datum</th><th>Beschreibung</th><th class="num">Betrag (€)</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <section class="card">
       <details>
         <summary>Debug</summary>
         <pre id="debugText" class="small" style="white-space:pre-wrap;color:#8ea0c6"></pre>
@@ -82,196 +99,7 @@
   </main>
 
   <footer>
-    v0.7a — Barclays & N26 via PDF→Excel→Import. Barclays: strikte Segmentierung „Umsatzübersicht … Umsätze Visa Karten‑Nr“, Duplikat‑Filter, Vorzeichen am Betrag.
+    v0.8 — Zwei Listen mit Minus/Plus verschieben; Excel-Export nur aus Liste 1; Datum-Filter (aufsteigend).
   </footer>
-
-  <!-- pdf.js -->
-  <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
-  <script>pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';</script>
-
-  <!-- SheetJS for Excel -->
-  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-
-  <script>
-  const EURO = new Intl.NumberFormat('de-DE',{minimumFractionDigits:2,maximumFractionDigits:2});
-  const state = { rows: [], lastBarclaysBlob:null, lastN26Blob:null };
-
-  function pushStatus(el, ok, name, message){
-    const row=document.createElement('div'); row.className='statusrow';
-    const badge=document.createElement('span'); badge.className = ok?'ok':'bad'; badge.textContent= ok?'OK':'Fehler';
-    const nm=document.createElement('span'); nm.className='name'; nm.textContent=name;
-    const msg=document.createElement('span'); msg.className='muted small'; msg.textContent=' – '+message;
-    row.append(badge,nm,msg); el.appendChild(row);
-  }
-  function render(){
-    const body=document.getElementById('txBody'); body.innerHTML='';
-    for(const r of state.rows){
-      const tr=document.createElement('tr');
-      tr.innerHTML = `<td>${r.Bank}</td><td>${r.Belegdatum||''}</td><td>${r.Valuta||''}</td><td>${r.Beschreibung}</td><td class="num">${EURO.format(r.Betrag)}</td>`;
-      body.appendChild(tr);
-    }
-    document.getElementById('txCount').textContent=state.rows.length;
-  }
-  async function readPdf(file){
-    const buf = await file.arrayBuffer();
-    const pdf = await pdfjsLib.getDocument({data:buf}).promise;
-    const texts=[];
-    for(let i=1;i<=pdf.numPages;i++){
-      const page=await pdf.getPage(i);
-      const tc=await page.getTextContent();
-      texts.push(tc.items.map(it=>it.str).join('\n'));
-    }
-    return texts.map(t=>t.replace(/\u00A0/g,' ').replace(/\u2212/g,'-'));
-  }
-  function normalizeDesc(s){
-    let out = s.replace(/\s+/g,' ').trim();
-    out = out.replace(/\s+(?:[A-Z]{2}\s+)?Visa$/i,'');
-    out = out.replace(/\s+[A-Z]{2}$/i,'');
-    out = out.replace(/(\bAIRBNB)\s*\*.*$/i,'$1');
-    return out.trim();
-  }
-
-  // Barclays parser with strict segment and trailing sign support, dedup
-  function parseBarclaysToRows(pages){
-    const results=[];
-    const re = /(\d{2}\.\d{2}\.\d{4})\s+(\d{2}\.\d{2}\.\d{4})\s+(.+?)\s+(\d{1,3}(?:\.\d{3})*,\d{2}[-+]?)/gs;
-    for(const page of pages){
-      const start = page.indexOf('Umsatzübersicht');
-      if (start === -1) continue;
-      const end = page.indexOf('Umsätze Visa Karten-Nr');
-      const seg = page.slice(start, end === -1 ? undefined : end);
-      let m;
-      while((m = re.exec(seg))){
-        let [_, beleg, valuta, desc, amtRaw] = m;
-        desc = normalizeDesc(desc);
-        if (/Gutschrift Manuelle Lastschrift/i.test(desc)) continue;
-        let sign=1;
-        if (/[+-]$/.test(amtRaw)){ sign = amtRaw.endsWith('-')? -1 : 1; amtRaw=amtRaw.slice(0,-1); }
-        const val = parseFloat(amtRaw.replace(/\./g,'').replace(',','.'))*sign;
-        results.push({Bank:'Barclays', Belegdatum:beleg, Valuta:valuta, Beschreibung:desc, Betrag:val});
-      }
-    }
-    // de-dup: key by (Beleg,Valuta,cleanDesc,amount)
-    const seen=new Set(); const unique=[];
-    for(const r of results){
-      const key = [r.Belegdatum,r.Valuta,r.Beschreibung.toLowerCase(),r.Betrag.toFixed(2)].join('|');
-      if(seen.has(key)) continue; seen.add(key); unique.push(r);
-    }
-    return unique;
-  }
-
-  // N26 parser (aus v0.6) – dreizeiliger Block
-  function parseN26ToRows(pages){
-    const results=[];
-    const all = pages.join('\n');
-    const lines = all.split(/\n+/).map(l=>l.trim()).filter(Boolean);
-    const ignore = /^(?:IBAN:|BIC:|Space IBAN:|Mastercard|Gutschriften|Lastschriften|Belastungen|Beschreibung Verbuchungsdatum Betrag|Vorläufiger (?:Space )?Kontoauszug|Spaces Zusammenfassung|JANNING ERIK FLIEGEL|Erstellt am|Seite \d+ von \d+|\d+\s*\/\s*\d+|Datum geöffnet:|Dein alter Kontostand|Dein neuer Kontostand|Ausgehende Transaktionen|Einkommende Transaktionen)$/i;
-    const reWert = /^Wertstellung\s+(\d{2}\.\d{2}\.\d{4})$/;
-    const reDate = /^(\d{2}\.\d{2}\.\d{4})$/;
-    const reAmt = /^([+\-]?\d{1,3}(?:\.\d{3})*,\d{2}(?:[-+])?)\s*€?$/;
-    for (let i=0;i<lines.length;i++){
-      const wm = lines[i].match(reWert);
-      if (!wm) continue;
-      if (i+1 >= lines.length || !reDate.test(lines[i+1])) continue;
-      const datum = lines[i+1];
-      if (i+2 >= lines.length || !reAmt.test(lines[i+2])) continue;
-      const amtRaw = lines[i+2].match(reAmt)[1];
-      // Beschreibung einsammeln
-      let k = i-1; const descParts=[];
-      while (k>=0 && !reWert.test(lines[k])){
-        const t = lines[k];
-        if (ignore.test(t)) { k--; continue; }
-        if (reDate.test(t) || reAmt.test(t)) break;
-        descParts.unshift(t);
-        if (descParts.join(' ').length>120) break;
-        k--;
-      }
-      let desc = descParts.join(' — ').trim();
-      if (!desc) continue;
-      if (/Barclays/i.test(desc)) { i += 2; continue; }
-      let sign=1, a=amtRaw;
-      if (a.endsWith('-') || a.startsWith('-')) sign=-1;
-      a=a.replace(/[+\-]$/,'').replace(/^[-+]/,'');
-      const val = parseFloat(a.replace(/\./g,'').replace(',','.')) * sign;
-      results.push({Bank:'N26', Belegdatum:datum, Valuta:datum, Beschreibung:desc, Betrag:val});
-      i += 2;
-    }
-    return results;
-  }
-
-  function rowsToXlsxBlob(rows, sheetName){
-    const header = ['Bank','Belegdatum','Valuta','Beschreibung','Betrag'];
-    const aoa = [header];
-    for(const r of rows){
-      aoa.push([r.Bank, r.Belegdatum||'', r.Valuta||'', r.Beschreibung||'', r.Betrag]);
-    }
-    const ws = XLSX.utils.aoa_to_sheet(aoa);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, sheetName);
-    const wbout = XLSX.write(wb, {bookType:'xlsx', type:'array'});
-    return new Blob([wbout], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
-  }
-
-  async function handleImport(bank){
-    const input = document.getElementById(bank+'Input');
-    const statusEl = document.getElementById(bank+'Status');
-    const lastEl = document.getElementById(bank+'Last');
-    statusEl.innerHTML='';
-    const f = input.files?.[0];
-    if(!f){ pushStatus(statusEl,false,'(keine Auswahl)','Keine Datei gewählt'); return; }
-    lastEl.textContent = f.name;
-    try{
-      const pages = (await readPdf(f)).map(t=>t.replace(/[\r]+/g,'\n'));
-      document.getElementById('debugText').textContent = pages.join('\n\n---\n\n').slice(0,25000);
-      let rows = bank==='barclays' ? parseBarclaysToRows(pages) : parseN26ToRows(pages);
-      if (rows.length===0){ pushStatus(statusEl,false,f.name,'0 Transaktionen erkannt'); return; }
-      // Excel erzeugen
-      const blob = rowsToXlsxBlob(rows, bank==='barclays'?'Barclays':'N26');
-      if (bank==='barclays') state.lastBarclaysBlob = blob; else state.lastN26Blob = blob;
-      // Auto-Download
-      const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=(bank==='barclays'?'BARCLAYS':'N26')+'_Transaktionen.xlsx'; a.click(); URL.revokeObjectURL(a.href);
-      // Excel direkt wieder einlesen
-      const data = await blob.arrayBuffer();
-      const wb = XLSX.read(data, {type:'array'});
-      const sheet = wb.Sheets[wb.SheetNames[0]];
-      const json = XLSX.utils.sheet_to_json(sheet, {header:1});
-      const parsed=[];
-      for(let i=1;i<json.length;i++){
-        const r=json[i]; if(!r || r.length<5) continue;
-        parsed.push({Bank:String(r[0]||''), Belegdatum:String(r[1]||''), Valuta:String(r[2]||''), Beschreibung:String(r[3]||''), Betrag:Number(r[4])});
-      }
-      // Anhängen
-      const before = state.rows.length;
-      state.rows = state.rows.concat(parsed);
-      render();
-      pushStatus(statusEl,true,f.name,`${rows.length} Transaktionen erkannt • ${state.rows.length-before} importiert`);
-    }catch(e){
-      console.error(e);
-      pushStatus(statusEl,false,f.name,'Fehler: '+(e?.message||String(e)));
-    }
-  }
-
-  document.getElementById('barclaysBtn').addEventListener('click', ()=>handleImport('barclays'));
-  document.getElementById('n26Btn').addEventListener('click', ()=>handleImport('n26'));
-
-  document.getElementById('barclaysExportXlsx').addEventListener('click', ()=>{
-    if(!state.lastBarclaysBlob){ alert('Noch keine Barclays-Daten erzeugt. Importiere zuerst eine Barclays-PDF.'); return; }
-    const a=document.createElement('a'); a.href=URL.createObjectURL(state.lastBarclaysBlob); a.download='BARCLAYS_Transaktionen.xlsx'; a.click(); URL.revokeObjectURL(a.href);
-  });
-  document.getElementById('n26ExportXlsx').addEventListener('click', ()=>{
-    if(!state.lastN26Blob){ alert('Noch keine N26-Daten erzeugt. Importiere zuerst eine N26-PDF.'); return; }
-    const a=document.createElement('a'); a.href=URL.createObjectURL(state.lastN26Blob); a.download='N26_Transaktionen.xlsx'; a.click(); URL.revokeObjectURL(a.href);
-  });
-
-  document.getElementById('exportCsv').addEventListener('click', ()=>{
-    const lines=['Bank;Belegdatum;Valuta;Beschreibung;Betrag'];
-    for(const r of state.rows){
-      const desc = (r.Beschreibung||'').replace(/;/g,',');
-      lines.push([r.Bank,r.Belegdatum||'',r.Valuta||'',desc,(+r.Betrag).toFixed(2).replace('.',',')].join(';'));
-    }
-    const blob=new Blob(['\ufeff'+lines.join('\n')],{type:'text/csv;charset=utf-8;'});
-    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='transaktionen.csv'; a.click(); URL.revokeObjectURL(a.href);
-  });
-  </script>
 </body>
 </html>
