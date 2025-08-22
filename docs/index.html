@@ -1,53 +1,528 @@
 <!doctype html>
 <html lang="de">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Kosten Analyzer v0.9</title>
-  <style>
-    body{font-family:sans-serif;margin:0;background:#0b1020;color:#fff;}
-    header{background:#131a2e;padding:12px;}
-    nav{display:flex;gap:16px;}
-    nav button{background:#1c2545;color:#fff;padding:6px 12px;border:none;cursor:pointer;}
-    section{display:none;padding:20px;}
-    section.active{display:block;}
-    .card{background:#131a2e;padding:12px;margin:12px 0;border-radius:8px;}
-  </style>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Kosten Analyzer — v0.9 (Tabs, Kategorien, Analyse)</title>
+<style>
+:root{
+  --bg:#0b1020; --card:#131a2e; --muted:#8ea0c6; --accent:#6cf; --good:#0a8; --bad:#e55;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;background:var(--bg);color:#e8efff;font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+header{padding:16px 20px;border-bottom:1px solid rgba(255,255,255,.08);display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+h1{margin:0;font-size:20px}
+.badge{background:#1f2746;color:#b7c7f0;border-radius:10px;padding:2px 8px;font-size:12px}
+.tabs{display:flex;gap:8px;flex-wrap:wrap}
+.tabbtn{background:#162042;color:#cfe0ff;border:1px solid rgba(255,255,255,.1);padding:8px 12px;border-radius:10px;cursor:pointer}
+.tabbtn.active{background:var(--accent);color:#001633;border:none;font-weight:700}
+main{padding:20px;display:grid;gap:16px}
+.card{background:var(--card);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:16px;box-shadow:0 10px 25px rgba(0,0,0,.25)}
+.controls{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+input[type=file]{display:block}
+button{background:#1c2545;border:1px solid rgba(255,255,255,.12);color:#fff;padding:8px 12px;border-radius:10px;cursor:pointer}
+button.primary{background:var(--accent);color:#001633;border:none;font-weight:700}
+.small{color:var(--muted);font-size:12px}
+table{width:100%;border-collapse:collapse}
+th,td{padding:8px 6px;border-bottom:1px dashed rgba(255,255,255,.08);vertical-align:top;text-align:left}
+th{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+tbody tr:hover{background:rgba(255,255,255,.03)}
+.num{text-align:right;font-variant-numeric:tabular-nums}
+.icon{width:24px;height:24px;display:inline-grid;place-items:center;border-radius:8px;font-weight:700;cursor:pointer}
+.minus{background:#2a1a1a;color:#ffb0b0;border:1px solid #5a2a2a}
+.plus{background:#152a19;color:#a8ffcf;border:1px solid #295a39}
+.flex{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+input[type=date],select,input[type=text],input[type=number]{background:#101831;border:1px solid rgba(255,255,255,.12);color:#e8efff;padding:6px 8px;border-radius:8px}
+.kpill{display:inline-block;background:#1f2746;color:#b7c7f0;padding:2px 8px;border-radius:999px;font-size:12px;margin:2px 4px}
+.del{background:#3a1a1a;color:#ffd2d2;border:1px solid #6d2a2a}
+.ok{background:#153123;color:#c4ffd7;border:1px solid #285a39}
+.status{display:flex;flex-direction:column;gap:6px}
+.code{white-space:pre-wrap;color:#8ea0c6;font-size:12px}
+.hidden{display:none}
+</style>
 </head>
 <body>
-  <header>
-    <h1>Kosten Analyzer v0.9</h1>
-    <nav>
-      <button onclick="showTab('import')">Import</button>
-      <button onclick="showTab('transactions')">Transaktionen</button>
-      <button onclick="showTab('analysis')">Analyse</button>
-    </nav>
-  </header>
+<header>
+  <h1>Kosten Analyzer</h1>
+  <span class="badge">v0.9</span>
+  <nav class="tabs">
+    <button class="tabbtn active" data-tab="importTab">Import</button>
+    <button class="tabbtn" data-tab="txTab">Transaktionen</button>
+    <button class="tabbtn" data-tab="analyticsTab">Analyse</button>
+  </nav>
+  <div style="flex:1"></div>
+  <button id="exportMaster" title="Gesamte Datenbank als Excel">Master-Excel exportieren</button>
+  <button id="resetAll" class="del" title="Lokal gespeicherte Daten löschen">Reset (lokal)</button>
+</header>
 
-  <section id="import" class="active">
-    <div class="card"><h2>Import</h2>
-      <p>PDF Import wie v0.7 stabil (Barclays & N26)</p>
-      <p>Alle neuen Transaktionen werden mit Kategorie <b>Default</b> gespeichert.</p>
+<main>
+  <!-- IMPORT TAB -->
+  <section id="importTab" class="tab card">
+    <h2 style="margin-top:0">Import</h2>
+    <p class="small">Import-Pipeline ist <b>stabil (v0.7)</b>: PDF → Excel → sofortiger Excel-Download → Import aus Excel. Neue Transaktionen erhalten automatisch die Kategorie <b>Default</b> und werden in die Master-Excel übernommen.</p>
+    <div class="row">
+      <div class="card">
+        <h3>Barclays</h3>
+        <input id="barclaysInput" type="file" accept="application/pdf"/>
+        <div class="controls">
+          <button id="barclaysBtn" class="primary">PDF → Excel → Import</button>
+          <span class="small">Zuletzt: <b id="barclaysLast">–</b></span>
+        </div>
+        <div id="barclaysStatus" class="status small"></div>
+      </div>
+      <div class="card">
+        <h3>N26</h3>
+        <input id="n26Input" type="file" accept="application/pdf"/>
+        <div class="controls">
+          <button id="n26Btn" class="primary">PDF → Excel → Import</button>
+          <span class="small">Zuletzt: <b id="n26Last">–</b></span>
+        </div>
+        <div id="n26Status" class="status small"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3 style="margin-top:0">Importierte Transaktionen (sofortige Kontrolle)</h3>
+      <table>
+        <thead><tr><th>Bank</th><th>Datum</th><th>Beschreibung</th><th class="num">Betrag</th><th>Kategorie</th><th></th></tr></thead>
+        <tbody id="incBody"></tbody>
+      </table>
+      <details style="margin-top:10px">
+        <summary>Debug</summary>
+        <pre id="debugText" class="code"></pre>
+      </details>
     </div>
   </section>
 
-  <section id="transactions">
-    <div class="card"><h2>Transaktionen</h2>
-      <p>Hier kannst du nach Zeitraum filtern, Transaktionen bearbeiten und Kategorien zuweisen.</p>
+  <!-- TRANSAKTIONEN TAB -->
+  <section id="txTab" class="tab card hidden">
+    <div class="flex">
+      <h2 style="margin:0">Transaktionsübersicht</h2>
+      <span class="small">Aus Master-Excel (lokal gespeichert)</span>
+    </div>
+    <div class="flex">
+      <span>Von</span><input id="txFrom" type="date">
+      <span>Bis</span><input id="txTo" type="date">
+      <button id="txFilter" class="ok">Filtern</button>
+      <button id="txReset" class="del">Reset</button>
+      <div style="flex:1"></div>
+      <select id="bulkCategory"></select>
+      <button id="applyBulk" class="primary">Kategorie zuweisen</button>
+      <button id="saveEdits" class="ok">Änderungen speichern</button>
+    </div>
+
+    <div class="row" style="grid-template-columns: 2fr 1fr;">
+      <div class="card">
+        <table>
+          <thead>
+            <tr>
+              <th><input type="checkbox" id="checkAll"></th>
+              <th>Bank</th><th>Datum</th><th>Name</th><th>Beschreibung</th><th class="num">Betrag</th><th>Kategorie</th>
+            </tr>
+          </thead>
+          <tbody id="txBody"></tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <h3 style="margin-top:0">Kategorien</h3>
+        <div id="catList"></div>
+        <div class="flex" style="margin-top:8px">
+          <input id="newCatName" type="text" placeholder="Neue Kategorie">
+          <button id="addCat" class="primary">Hinzufügen</button>
+        </div>
+        <p class="small">Beim Löschen einer Kategorie werden alle Transaktionen mit dieser Kategorie auf <b>Default</b> gesetzt.</p>
+      </div>
     </div>
   </section>
 
-  <section id="analysis">
-    <div class="card"><h2>Analyse</h2>
-      <p>Hier kannst du Zeiträume wählen und Ausgaben nach Kategorien analysieren (Balken, Kuchen, Trends).</p>
+  <!-- ANALYTICS TAB -->
+  <section id="analyticsTab" class="tab card hidden">
+    <div class="flex">
+      <h2 style="margin:0">Analyse</h2>
+      <span class="small">Vergleiche Kategorien & Monate, Trends, Balken, Kuchen.</span>
+    </div>
+    <div class="flex">
+      <span>Von</span><input id="anFrom" type="date">
+      <span>Bis</span><input id="anTo" type="date">
+      <label class="small">Monate auswählen (optional)</label>
+      <select id="monthMulti" multiple size="4" style="min-width:140px"></select>
+      <label class="small">Kategorien</label>
+      <select id="catMulti" multiple size="4" style="min-width:140px"></select>
+      <button id="runAnalytics" class="primary">Analysieren</button>
+    </div>
+    <div class="row">
+      <div class="card">
+        <h3 style="margin-top:0">Summe je Kategorie (Balken)</h3>
+        <canvas id="barCat"></canvas>
+      </div>
+      <div class="card">
+        <h3 style="margin-top:0">Anteile (Kuchen)</h3>
+        <canvas id="pieCat"></canvas>
+      </div>
+    </div>
+    <div class="row">
+      <div class="card" style="grid-column:1 / -1">
+        <h3 style="margin-top:0">Trends je Monat (Linie)</h3>
+        <canvas id="lineTrend"></canvas>
+      </div>
     </div>
   </section>
+</main>
+
+<footer class="small" style="padding:16px 20px;border-top:1px solid rgba(255,255,255,.08)">
+  v0.9 — Tabs (Import, Transaktionen, Analyse), Kategorien & Bearbeitung, Master-Excel lokal, Charts (Chart.js).
+</footer>
+
+<!-- libs -->
+<script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+<script>pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';</script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 
 <script>
-function showTab(tab){
-  document.querySelectorAll('section').forEach(s=>s.classList.remove('active'));
-  document.getElementById(tab).classList.add('active');
+// ===== Utilities & State =====
+const EURO = new Intl.NumberFormat('de-DE',{minimumFractionDigits:2,maximumFractionDigits:2});
+const $ = sel => document.querySelector(sel);
+const $$ = sel => Array.from(document.querySelectorAll(sel));
+const DEFAULT_CATS = ['Default','Cafe','Restaurant','Lebensmittel','Gesundheitswesen','Bildung','Urlaub'];
+
+const store = {
+  load(){
+    try{
+      const raw = localStorage.getItem('ka_store_v1');
+      if(!raw) return { db:[], cats:[...DEFAULT_CATS] };
+      const obj = JSON.parse(raw);
+      if(!obj.cats || !obj.cats.length) obj.cats=[...DEFAULT_CATS];
+      if(!obj.db) obj.db=[];
+      return obj;
+    }catch(e){ console.error(e); return { db:[], cats:[...DEFAULT_CATS] }; }
+  },
+  save(obj){
+    localStorage.setItem('ka_store_v1', JSON.stringify(obj));
+  }
+};
+
+let DATA = store.load(); // {db:[], cats:[]}
+let charts = { bar:null, pie:null, line:null };
+
+function uuid(){ return (crypto?.randomUUID?.() || Math.random().toString(36).slice(2)); }
+function toJSDate(d){ const m = (d||'').match(/^(\d{2})\.(\d{2})\.(\d{4})$/); return m? new Date(+m[3],+m[2]-1,+m[1]) : null; }
+function fmtMonth(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }
+
+// ===== Tabs =====
+function showTab(id){
+  $$('.tab').forEach(el=>el.classList.add('hidden'));
+  $('#'+id).classList.remove('hidden');
+  $$('.tabbtn').forEach(b=>b.classList.toggle('active', b.dataset.tab===id));
 }
+$$('.tabbtn').forEach(b=>b.addEventListener('click', ()=>showTab(b.dataset.tab)));
+
+// ===== Import (v0.7 stable) =====
+async function readPdf(file){
+  const buf = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({data:buf}).promise;
+  const texts=[];
+  for(let i=1;i<=pdf.numPages;i++){
+    const page=await pdf.getPage(i);
+    const tc=await page.getTextContent();
+    texts.push(tc.items.map(it=>it.str).join('\n'));
+  }
+  return texts.map(t=>t.replace(/\u00A0/g,' ').replace(/\u2212/g,'-'));
+}
+function normalizeDesc(s){
+  let out = s.replace(/\s+/g,' ').trim();
+  out = out.replace(/\s+(?:[A-Z]{2}\s+)?Visa$/i,'');
+  out = out.replace(/\s+[A-Z]{2}$/i,'');
+  out = out.replace(/(\bAIRBNB)\s*\*.*$/i,'$1');
+  return out.trim();
+}
+function parseBarclaysToRows(pages){
+  const results=[];
+  const re = /(\d{2}\.\d{2}\.\d{4})\s+(\d{2}\.\d{2}\.\d{4})\s+(.+?)\s+(\d{1,3}(?:\.\d{3})*,\d{2}[-+]?)/gs;
+  for(const page of pages){
+    const start = page.indexOf('Umsatzübersicht');
+    if (start === -1) continue;
+    const end = page.indexOf('Umsätze Visa Karten-Nr');
+    const seg = page.slice(start, end === -1 ? undefined : end);
+    let m;
+    while((m = re.exec(seg))){
+      let [_, beleg, valuta, desc, amtRaw] = m;
+      desc = normalizeDesc(desc);
+      if (/Gutschrift Manuelle Lastschrift/i.test(desc)) continue;
+      let sign=1;
+      if (/[+-]$/.test(amtRaw)){ sign = amtRaw.endsWith('-')? -1 : 1; amtRaw=amtRaw.slice(0,-1); }
+      const val = parseFloat(amtRaw.replace(/\./g,'').replace(',','.'))*sign;
+      results.push({Bank:'Barclays', Datum: beleg, Beschreibung: desc, Betrag: val, Kategorie:'Default', ID: uuid()});
+    }
+  }
+  const seen=new Set(); const unique=[];
+  for(const r of results){
+    const key=[r.Datum,r.Beschreibung.toLowerCase(),r.Betrag.toFixed(2)].join('|');
+    if(seen.has(key)) continue; seen.add(key); unique.push(r);
+  }
+  return unique;
+}
+function parseN26ToRows(pages){
+  const results=[];
+  const all = pages.join('\n');
+  const lines = all.split(/\n+/).map(l=>l.trim()).filter(Boolean);
+  const ignore = /^(?:IBAN:|BIC:|Space IBAN:|Mastercard|Gutschriften|Lastschriften|Belastungen|Beschreibung Verbuchungsdatum Betrag|Vorläufiger (?:Space )?Kontoauszug|Spaces Zusammenfassung|Erstellt am|Seite \d+ von \d+|\d+\s*\/\s*\d+|Datum geöffnet:|Dein alter Kontostand|Dein neuer Kontostand|Ausgehende Transaktionen|Einkommende Transaktionen)$/i;
+  const reWert = /^Wertstellung\s+(\d{2}\.\d{2}\.\d{4})$/;
+  const reDate = /^(\d{2}\.\d{2}\.\d{4})$/;
+  const reAmt = /^([+\-]?\d{1,3}(?:\.\d{3})*,\d{2}(?:[-+])?)\s*€?$/;
+  for (let i=0;i<lines.length;i++){
+    const wm = lines[i].match(reWert);
+    if (!wm) continue;
+    if (i+1 >= lines.length || !reDate.test(lines[i+1])) continue;
+    const datum = lines[i+1];
+    if (i+2 >= lines.length || !reAmt.test(lines[i+2])) continue;
+    const amtRaw = lines[i+2].match(reAmt)[1];
+    let k = i-1; const descParts=[];
+    while (k>=0 && !reWert.test(lines[k])){
+      const t = lines[k];
+      if (ignore.test(t)) { k--; continue; }
+      if (reDate.test(t) || reAmt.test(t)) break;
+      descParts.unshift(t);
+      if (descParts.join(' ').length>120) break;
+      k--;
+    }
+    let desc = descParts.join(' — ').trim();
+    if (!desc) continue;
+    if (/Barclays/i.test(desc)) { i += 2; continue; }
+    let sign=1, a=amtRaw;
+    if (a.endsWith('-') || a.startsWith('-')) sign=-1;
+    a=a.replace(/[+\-]$/,'').replace(/^[-+]/,'');
+    const val = parseFloat(a.replace(/\./g,'').replace(',','.')) * sign;
+    results.push({Bank:'N26', Datum: datum, Beschreibung: desc, Betrag: val, Kategorie:'Default', ID: uuid()});
+    i += 2;
+  }
+  return results;
+}
+// Excel helpers
+function rowsToXlsxBlob(rows, sheet='Transaktionen'){
+  const header=['ID','Bank','Datum','Name','Beschreibung','Betrag','Kategorie'];
+  const aoa=[header];
+  for(const r of rows){
+    aoa.push([r.ID||'', r.Bank||'', r.Datum||'', r.Name||'', r.Beschreibung||'', r.Betrag||0, r.Kategorie||'Default']);
+  }
+  const ws=XLSX.utils.aoa_to_sheet(aoa);
+  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, sheet);
+  const wbout=XLSX.write(wb,{bookType:'xlsx',type:'array'});
+  return new Blob([wbout],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+}
+function downloadBlob(blob, filename){
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=filename; a.click(); URL.revokeObjectURL(a.href);
+}
+// Render import preview
+function renderImportPreview(rows){
+  const tb=$("#incBody"); tb.innerHTML='';
+  for(const r of rows){
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td>${r.Bank}</td><td>${r.Datum}</td><td>${r.Beschreibung||''}</td><td class="num">${EURO.format(r.Betrag)}</td><td>${r.Kategorie||'Default'}</td><td></td>`;
+    tb.appendChild(tr);
+  }
+}
+
+async function handleImport(bank){
+  const input = $('#'+bank+'Input');
+  const status = $('#'+bank+'Status');
+  const last = $('#'+bank+'Last');
+  status.innerHTML='';
+  const f = input.files?.[0];
+  if(!f){ status.textContent='Keine Datei gewählt'; return; }
+  last.textContent = f.name;
+  try{
+    const pages=(await readPdf(f)).map(t=>t.replace(/[\r]+/g,'\n'));
+    $('#debugText').textContent = pages.join('\n\n---\n\n').slice(0,25000);
+    let rows = bank==='barclays' ? parseBarclaysToRows(pages) : parseN26ToRows(pages);
+    if(rows.length===0){ status.textContent='0 Transaktionen erkannt'; return; }
+
+    // 1) Sofortige Einzel-Excel (nur dieser Import) downloaden (Anforderung)
+    downloadBlob(rowsToXlsxBlob(rows, bank==='barclays'?'Barclays':'N26'), (bank==='barclays'?'BARCLAYS':'N26')+'_Transaktionen.xlsx');
+
+    // 2) In Master-DB übernehmen (Kategorie Default)
+    for(const r of rows){
+      if(!r.Kategorie) r.Kategorie='Default';
+      if(!r.ID) r.ID=uuid();
+      if(!r.Name) r.Name=''; // optional
+      DATA.db.push(r);
+    }
+    store.save(DATA);
+    renderImportPreview(rows);
+    status.textContent = `OK: ${rows.length} neue Transaktionen importiert (Master-Excel aktualisiert)`;
+  }catch(e){
+    console.error(e); status.textContent = 'Fehler: '+(e?.message||String(e));
+  }
+}
+$('#barclaysBtn').addEventListener('click', ()=>handleImport('barclays'));
+$('#n26Btn').addEventListener('click', ()=>handleImport('n26'));
+
+// ===== Master Excel Export / Reset =====
+$('#exportMaster').addEventListener('click', ()=>{
+  if(!DATA.db.length){ alert('Keine Daten vorhanden.'); return; }
+  downloadBlob(rowsToXlsxBlob(DATA.db,'Master'), 'KostenAnalyzer_Master.xlsx');
+});
+$('#resetAll').addEventListener('click', ()=>{
+  if(!confirm('Wirklich alle lokal gespeicherten Daten (DB & Kategorien) löschen?')) return;
+  DATA = { db:[], cats:[...DEFAULT_CATS] };
+  store.save(DATA);
+  renderTx(); renderCats(); fillAnalyticsSelectors();
+  $("#incBody").innerHTML='';
+  alert('Zurückgesetzt.');
+});
+
+// ===== Transaktionen-Tab =====
+function renderCats(){
+  // Dropdown für Bulk
+  const sel=$("#bulkCategory"); sel.innerHTML='';
+  for(const c of DATA.cats){ const opt=document.createElement('option'); opt.value=c; opt.textContent=c; sel.appendChild(opt); }
+  // Liste im Sidebar
+  const box=$("#catList"); box.innerHTML='';
+  DATA.cats.forEach(c=>{
+    const row=document.createElement('div'); row.className='flex';
+    const lbl=document.createElement('span'); lbl.className='kpill'; lbl.textContent=c;
+    const del=document.createElement('button'); del.className='del'; del.textContent='Löschen';
+    del.disabled = c==='Default';
+    del.addEventListener('click', ()=>{
+      if(!confirm(`Kategorie "${c}" löschen? Alle zugehörigen Transaktionen werden auf "Default" gesetzt.`)) return;
+      DATA.db.forEach(t=>{ if(t.Kategorie===c) t.Kategorie='Default'; });
+      DATA.cats = DATA.cats.filter(x=>x!==c);
+      store.save(DATA);
+      renderCats(); renderTx(); fillAnalyticsSelectors();
+      alert(`Kategorie "${c}" gelöscht. Transaktionen neu zugeordnet → Default.`);
+    });
+    row.append(lbl,del);
+    box.appendChild(row);
+  });
+}
+$("#addCat").addEventListener('click', ()=>{
+  const nm = ($("#newCatName").value||'').trim();
+  if(!nm) return;
+  if(DATA.cats.includes(nm)) { alert('Kategorie existiert bereits.'); return; }
+  DATA.cats.push(nm);
+  store.save(DATA);
+  $("#newCatName").value='';
+  renderCats(); fillAnalyticsSelectors();
+});
+$("#checkAll").addEventListener('change', e=>{
+  $$('#txBody input[type=checkbox]').forEach(ch=>ch.checked=e.target.checked);
+});
+
+function renderTx(){
+  const tbody=$("#txBody"); tbody.innerHTML='';
+  const from = $("#txFrom").value ? new Date($("#txFrom").value) : null;
+  const to = $("#txTo").value ? new Date($("#txTo").value) : null;
+  const rows = DATA.db.filter(t=>{
+    const d = toJSDate(t.Datum);
+    if(!d) return true;
+    if(from && d<from) return false;
+    if(to && d>to) return false;
+    return true;
+  }).sort((a,b)=> (toJSDate(a.Datum)-toJSDate(b.Datum)) || a.Beschreibung.localeCompare(b.Beschreibung));
+  for(const r of rows){
+    const tr=document.createElement('tr');
+    tr.innerHTML=`
+      <td><input type="checkbox" data-id="${r.ID}"></td>
+      <td>${r.Bank}</td>
+      <td><input type="text" value="${r.Datum}" data-id="${r.ID}" data-field="Datum" style="width:100px"></td>
+      <td><input type="text" value="${r.Name||''}" data-id="${r.ID}" data-field="Name" style="width:140px"></td>
+      <td><input type="text" value="${(r.Beschreibung||'').replace(/"/g,'&quot;')}" data-id="${r.ID}" data-field="Beschreibung" style="width:100%"></td>
+      <td class="num"><input type="number" step="0.01" value="${Number(r.Betrag).toFixed(2)}" data-id="${r.ID}" data-field="Betrag" style="width:100px;text-align:right"></td>
+      <td>
+        <select data-id="${r.ID}" data-field="Kategorie">
+          ${DATA.cats.map(c=>`<option value="${c}" ${c===r.Kategorie?'selected':''}>${c}</option>`).join('')}
+        </select>
+      </td>`;
+    tbody.appendChild(tr);
+  }
+}
+$("#txFilter").addEventListener('click', renderTx);
+$("#txReset").addEventListener('click', ()=>{ $("#txFrom").value=''; $("#txTo").value=''; renderTx(); });
+
+$("#applyBulk").addEventListener('click', ()=>{
+  const cat = $("#bulkCategory").value;
+  const ids = $$('#txBody input[type=checkbox]:checked').map(ch=>ch.dataset.id);
+  if(!ids.length){ alert('Bitte Zeilen auswählen.'); return; }
+  DATA.db.forEach(t=>{ if(ids.includes(t.ID)) t.Kategorie=cat; });
+  store.save(DATA);
+  renderTx(); fillAnalyticsSelectors();
+});
+
+$("#saveEdits").addEventListener('click', ()=>{
+  const inputs = $$('#txBody select, #txBody input[type=text], #txBody input[type=number]');
+  const map = {};
+  inputs.forEach(el=>{
+    const id = el.dataset.id, field = el.dataset.field;
+    if(!id || !field) return;
+    (map[id]||(map[id]={}))[field] = el.type==='number' ? Number(el.value) : el.value;
+  });
+  DATA.db = DATA.db.map(t=>{
+    if(map[t.ID]) return Object.assign({}, t, map[t.ID]);
+    return t;
+  });
+  store.save(DATA);
+  alert('Änderungen gespeichert und in Master-Excel übernommen.');
+});
+
+// ===== Analytics =====
+function fillAnalyticsSelectors(){
+  const months = Array.from(new Set(DATA.db.map(r=>{
+    const d = toJSDate(r.Datum); return d? fmtMonth(d) : null;
+  }).filter(Boolean))).sort();
+  const mm = $("#monthMulti"); mm.innerHTML=''; months.forEach(m=>{ const o=document.createElement('option'); o.value=m; o.textContent=m; mm.appendChild(o); });
+  const cm = $("#catMulti"); cm.innerHTML=''; DATA.cats.forEach(c=>{ const o=document.createElement('option'); o.value=c; o.textContent=c; cm.appendChild(o); });
+}
+function getSelected(sel){ return Array.from(sel.selectedOptions||[]).map(o=>o.value); }
+
+function analyze(){
+  const from = $("#anFrom").value ? new Date($("#anFrom").value) : null;
+  const to = $("#anTo").value ? new Date($("#anTo").value) : null;
+  const monthsSel = new Set(getSelected($("#monthMulti")));
+  const catsSel = new Set(getSelected($("#catMulti")));
+  const rows = DATA.db.filter(t=>{
+    const d = toJSDate(t.Datum);
+    if(d){
+      if(from && d<from) return false;
+      if(to && d>to) return false;
+      if(monthsSel.size && !monthsSel.has(fmtMonth(d))) return false;
+    }
+    if(catsSel.size && !catsSel.has(t.Kategorie)) return false;
+    return true;
+  });
+
+  // sums by category
+  const byCat = {};
+  rows.forEach(r=>{ byCat[r.Kategorie] = (byCat[r.Kategorie]||0) + Number(r.Betrag||0); });
+  const catLabels = Object.keys(byCat).sort();
+  const catValues = catLabels.map(k=>byCat[k]);
+
+  // trend by month
+  const byMonth = {};
+  rows.forEach(r=>{
+    const d = toJSDate(r.Datum); if(!d) return;
+    const m = fmtMonth(d);
+    byMonth[m] = (byMonth[m]||0) + Number(r.Betrag||0);
+  });
+  const mLabels = Object.keys(byMonth).sort();
+  const mValues = mLabels.map(k=>byMonth[k]);
+
+  if(charts.bar){ charts.bar.destroy(); charts.pie.destroy(); charts.line.destroy(); }
+  charts.bar = new Chart($('#barCat'), { type:'bar', data:{ labels:catLabels, datasets:[{ label:'Summe (€)', data:catValues }] } });
+  charts.pie = new Chart($('#pieCat'), { type:'pie', data:{ labels:catLabels, datasets:[{ data:catValues }] } });
+  charts.line = new Chart($('#lineTrend'), { type:'line', data:{ labels:mLabels, datasets:[{ label:'Summe (€) je Monat', data:mValues }] } });
+}
+$('#runAnalytics').addEventListener('click', analyze);
+
+// ===== Init =====
+function init(){
+  showTab('importTab');
+  renderCats();
+  renderTx();
+  fillAnalyticsSelectors();
+}
+init();
 </script>
 </body>
 </html>
